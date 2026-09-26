@@ -82,8 +82,6 @@ struct WebView: NSViewRepresentable {
         } else {
             webView = WKWebView()
         }
-        // Pretend Safari because 𝕏 bans the user agent of WebView
-        webView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Safari/605.1.15"
         let osVersion = ProcessInfo.processInfo.operatingSystemVersion
         WebViewDiagnostics.log(
             "created location=\(WebViewDiagnostics.location(for: url)) "
