@@ -230,8 +230,44 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
     // MARK: WKScriptMessageHandler
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.name == WebViewConfigurations.handlerName else { return }
+        if let diagnostic = message.body as? [String: Any],
+           diagnostic["channel"] as? String == "xdeck-runtime-diagnostic" {
+            logRuntimeDiagnostic(diagnostic)
+            return
+        }
         print("[WKScriptMessage] \(message.body)")
         owner.messageFromWebView = message.body as? String
+    }
+
+    private func logRuntimeDiagnostic(_ diagnostic: [String: Any]) {
+        func safeString(_ key: String) -> String {
+            guard let value = diagnostic[key] as? String else { return "<unavailable>" }
+            return String(WebViewDiagnostics.sanitized(value).prefix(500))
+        }
+
+        func safeNumber(_ key: String) -> String {
+            guard let value = diagnostic[key] as? NSNumber else { return "<unavailable>" }
+            return value.stringValue
+        }
+
+        switch diagnostic["type"] as? String {
+        case "javascriptError":
+            WebViewDiagnostics.log(
+                "JavaScript error name=\(String(reflecting: safeString("name"))) "
+                    + "message=\(String(reflecting: safeString("message"))) "
+                    + "location=\(safeString("location")) line=\(safeNumber("line")) "
+                    + "column=\(safeNumber("column"))")
+        case "unhandledPromiseRejection":
+            WebViewDiagnostics.log(
+                "unhandled promise rejection name=\(String(reflecting: safeString("name"))) "
+                    + "message=\(String(reflecting: safeString("message")))")
+        case "resourceLoadFailure":
+            WebViewDiagnostics.log(
+                "resource load failure element=\(safeString("element")) "
+                    + "location=\(safeString("location"))")
+        default:
+            break
+        }
     }
 
     private func logNavigationFailure(_ event: String, webView: WKWebView, error: Error) {
@@ -269,7 +305,15 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
                     bodyScrollHeight: body ? body.scrollHeight : null,
                     bodyDisplay: bodyStyle ? bodyStyle.display : null,
                     bodyVisibility: bodyStyle ? bodyStyle.visibility : null,
-                    bodyOpacity: bodyStyle ? bodyStyle.opacity : null
+                    bodyOpacity: bodyStyle ? bodyStyle.opacity : null,
+                    elementCount: document.querySelectorAll("*").length,
+                    scriptCount: document.scripts.length,
+                    stylesheetLinkCount: document.querySelectorAll('link[rel~="stylesheet"]').length,
+                    bodyElementCount: body ? body.querySelectorAll("*").length : null,
+                    hasDataReactRoot: document.querySelector("[data-reactroot]") !== null,
+                    hasReactRoot: document.querySelector("#react-root") !== null,
+                    hasRoot: document.querySelector("#root") !== null,
+                    hasLayers: document.querySelector("#layers") !== null
                 };
             })()
             """
@@ -306,13 +350,20 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
             let layoutDiagnostics = layoutKeys.map { key in
                 "\(key)=\(diagnostics[key].map { String(describing: $0) } ?? "<unavailable>")"
             }.joined(separator: " ")
+            let structureKeys = [
+                "elementCount", "scriptCount", "stylesheetLinkCount", "bodyElementCount",
+                "hasDataReactRoot", "hasReactRoot", "hasRoot", "hasLayers"
+            ]
+            let structureDiagnostics = structureKeys.map { key in
+                "\(key)=\(diagnostics[key].map { String(describing: $0) } ?? "<unavailable>")"
+            }.joined(separator: " ")
 
             WebViewDiagnostics.log(
                 "didFinish JavaScript userAgent=\(String(reflecting: userAgent)) "
                     + "readyState=\(String(reflecting: readyState)) "
                     + "title=\(String(reflecting: title)) location=\(host)\(path) "
                     + "bodyExists=\(bodyExistsText) bodyChildCount=\(bodyChildCountText) "
-                    + "layout {\(layoutDiagnostics)}")
+                    + "layout {\(layoutDiagnostics)} structure {\(structureDiagnostics)}")
         }
     }
 }
