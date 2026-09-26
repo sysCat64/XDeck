@@ -2,7 +2,7 @@ import SwiftUI
 
 struct LoginView: View {
     @State var isLoading: Bool = false
-    @State var url: URL = URL(string: "https://x.com/login")!
+    @State var url: URL = URL(string: "https://example.com")!
     @State var scriptExecutionRequest: String? = nil
     @Binding var isShowingAlert: Bool
     @Binding var alertMessage: String?
