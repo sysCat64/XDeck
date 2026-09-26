@@ -148,6 +148,20 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         owner.isLoading = false
         WebViewDiagnostics.log("didFinish location=\(WebViewDiagnostics.location(for: webView.url))")
+        let superviewBounds = webView.superview.map { "\($0.bounds.width)x\($0.bounds.height)" } ?? "<unavailable>"
+        let contentViewBounds: String
+        if let contentView = webView.window?.contentView {
+            contentViewBounds = "\(contentView.bounds.width)x\(contentView.bounds.height)"
+        } else {
+            contentViewBounds = "<unavailable>"
+        }
+        WebViewDiagnostics.log(
+            "geometry frame=\(webView.frame.width)x\(webView.frame.height) "
+                + "bounds=\(webView.bounds.width)x\(webView.bounds.height) "
+                + "superviewBounds=\(superviewBounds) "
+                + "windowContentViewBounds=\(contentViewBounds) "
+                + "windowIsNil=\(webView.window == nil) isHidden=\(webView.isHidden) "
+                + "alphaValue=\(webView.alphaValue)")
         logPageDiagnostics(for: webView)
     }
 
@@ -234,6 +248,9 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
         let expression = """
             (() => {
                 const body = document.body;
+                const root = document.documentElement;
+                const bodyRect = body ? body.getBoundingClientRect() : null;
+                const bodyStyle = body ? getComputedStyle(body) : null;
                 return {
                     userAgent: navigator.userAgent,
                     readyState: document.readyState,
@@ -241,7 +258,18 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
                     host: window.location.host,
                     path: window.location.pathname,
                     bodyExists: body !== null,
-                    bodyChildCount: body ? body.childNodes.length : null
+                    bodyChildCount: body ? body.childNodes.length : null,
+                    windowInnerWidth: window.innerWidth,
+                    windowInnerHeight: window.innerHeight,
+                    documentElementClientWidth: root ? root.clientWidth : null,
+                    documentElementClientHeight: root ? root.clientHeight : null,
+                    bodyRectWidth: bodyRect ? bodyRect.width : null,
+                    bodyRectHeight: bodyRect ? bodyRect.height : null,
+                    bodyScrollWidth: body ? body.scrollWidth : null,
+                    bodyScrollHeight: body ? body.scrollHeight : null,
+                    bodyDisplay: bodyStyle ? bodyStyle.display : null,
+                    bodyVisibility: bodyStyle ? bodyStyle.visibility : null,
+                    bodyOpacity: bodyStyle ? bodyStyle.opacity : null
                 };
             })()
             """
@@ -269,12 +297,22 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
             let bodyChildCount = diagnostics["bodyChildCount"] as? Int
             let bodyExistsText = bodyExists.map { String($0) } ?? "<unavailable>"
             let bodyChildCountText = bodyChildCount.map { String($0) } ?? "<unavailable>"
+            let layoutKeys = [
+                "windowInnerWidth", "windowInnerHeight",
+                "documentElementClientWidth", "documentElementClientHeight",
+                "bodyRectWidth", "bodyRectHeight", "bodyScrollWidth", "bodyScrollHeight",
+                "bodyDisplay", "bodyVisibility", "bodyOpacity"
+            ]
+            let layoutDiagnostics = layoutKeys.map { key in
+                "\(key)=\(diagnostics[key].map { String(describing: $0) } ?? "<unavailable>")"
+            }.joined(separator: " ")
 
             WebViewDiagnostics.log(
                 "didFinish JavaScript userAgent=\(String(reflecting: userAgent)) "
                     + "readyState=\(String(reflecting: readyState)) "
                     + "title=\(String(reflecting: title)) location=\(host)\(path) "
-                    + "bodyExists=\(bodyExistsText) bodyChildCount=\(bodyChildCountText)")
+                    + "bodyExists=\(bodyExistsText) bodyChildCount=\(bodyChildCountText) "
+                    + "layout {\(layoutDiagnostics)}")
         }
     }
 }
