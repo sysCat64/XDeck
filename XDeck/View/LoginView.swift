@@ -59,6 +59,9 @@ struct LoginView: View {
             window.addEventListener("error", function(event) {
                 var target = event.target;
                 if (target && target !== window && target.nodeType === 1) {
+                    if (String(target.tagName || "").toLowerCase() === "script"
+                        && String(target.type || "").toLowerCase() === "module"
+                        && String(target.src || "").indexOf("/entry-client-logged-out-") !== -1) return;
                     var resource = target.currentSrc || target.src || target.href || target.data || target.poster;
                     sendDiagnostic({
                         type: "resourceLoadFailure",
@@ -81,6 +84,72 @@ struct LoginView: View {
                     column: Number(event.colno) || 0
                 });
             }, true);
+
+            function findEntryModule() {
+                var scripts = document.getElementsByTagName("script");
+                for (var index = 0; index < scripts.length; index += 1) {
+                    var script = scripts[index];
+                    if (String(script.type || "").toLowerCase() === "module"
+                        && script.hasAttribute("src")
+                        && script.src.indexOf("/entry-client-logged-out-") !== -1) {
+                        return script;
+                    }
+                }
+                return null;
+            }
+
+            if (window === window.top) {
+                function observeEntryModuleEvent(event) {
+                    var script = event.target;
+                    if (!script || String(script.tagName || "").toLowerCase() !== "script") return;
+                    var entryModule = findEntryModule();
+                    if (!entryModule || script !== entryModule) return;
+                    if (event.type !== "load" && event.type !== "error") return;
+                    sendDiagnostic({
+                        type: "entryModuleEvent",
+                        event: event.type,
+                        location: safeLocation(script.src)
+                    });
+                }
+
+                window.addEventListener("load", observeEntryModuleEvent, true);
+                window.addEventListener("error", observeEntryModuleEvent, true);
+
+                function probeEntryModuleEvaluation() {
+                    var entryModule = findEntryModule();
+                    if (!entryModule) {
+                        sendDiagnostic({
+                            type: "moduleEvaluationProbe",
+                            status: "entry-module-not-found"
+                        });
+                        return;
+                    }
+
+                    import(entryModule.src).then(function() {
+                        sendDiagnostic({
+                            type: "moduleEvaluationProbe",
+                            status: "resolved"
+                        });
+                    }, function(error) {
+                        var name = "<unknown>";
+                        var message = "<unavailable>";
+                        try {
+                            if (error && typeof error.name === "string") name = error.name;
+                            if (error && typeof error.message === "string") message = error.message;
+                        } catch (ignored) {}
+                        sendDiagnostic({
+                            type: "moduleEvaluationProbe",
+                            status: "rejected",
+                            name: safeText(name),
+                            message: safeText(message)
+                        });
+                    });
+                }
+
+                window.addEventListener("load", function() {
+                    window.setTimeout(probeEntryModuleEvaluation, 3000);
+                }, true);
+            }
 
             window.addEventListener("unhandledrejection", function(event) {
                 var name = "<unknown>";

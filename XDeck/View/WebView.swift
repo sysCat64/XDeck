@@ -266,6 +266,25 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
             WebViewDiagnostics.log(
                 "resource load failure element=\(safeString("element")) "
                     + "location=\(safeString("location"))")
+        case "entryModuleEvent":
+            let event = safeString("event")
+            guard event == "load" || event == "error" else { return }
+            WebViewDiagnostics.log(
+                "entry module event=\(event) location=\(safeString("location"))")
+        case "moduleEvaluationProbe":
+            switch diagnostic["status"] as? String {
+            case "resolved":
+                WebViewDiagnostics.log("module evaluation probe status=resolved")
+            case "rejected":
+                WebViewDiagnostics.log(
+                    "module evaluation probe status=rejected\n"
+                        + "name=\(safeString("name"))\n"
+                        + "message=\(safeString("message"))")
+            case "entry-module-not-found":
+                WebViewDiagnostics.log("module evaluation probe status=entry-module-not-found")
+            default:
+                break
+            }
         default:
             break
         }
