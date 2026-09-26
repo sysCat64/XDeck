@@ -19,12 +19,36 @@ jobs:
 
       - name: Select Xcode 26
         run: |
-          if [ ! -d "/Applications/Xcode_26.app" ]; then
-            echo "Xcode 26 was not found at /Applications/Xcode_26.app"
+          XCODE_APP="$(
+            python3 - <<'PY'
+          import glob
+          import os
+          import re
+
+          candidates = []
+          for path in glob.glob("/Applications/Xcode_26*.app"):
+              match = re.fullmatch(r"Xcode_(26(?:\.\d+)*)\.app", os.path.basename(path))
+              if match and os.path.isdir(os.path.join(path, "Contents", "Developer")):
+                  version = tuple(int(part) for part in match.group(1).split("."))
+                  candidates.append((version, path))
+
+          if candidates:
+              print(max(candidates)[1])
+          PY
+          )"
+          if [ -z "$XCODE_APP" ]; then
+            echo "No installed Xcode 26.x application was found under /Applications"
             exit 1
           fi
-          sudo xcode-select -s /Applications/Xcode_26.app/Contents/Developer
-          xcodebuild -version
+          echo "Selecting $XCODE_APP"
+          sudo xcode-select -s "$XCODE_APP/Contents/Developer"
+          XCODE_VERSION="$(xcodebuild -version)"
+          printf '%s\n' "$XCODE_VERSION"
+          XCODE_MAJOR="$(printf '%s\n' "$XCODE_VERSION" | awk 'NR == 1 { split($2, version, "."); print version[1] }')"
+          if [ "$XCODE_MAJOR" != "26" ]; then
+            echo "Expected Xcode major version 26, got: $XCODE_MAJOR"
+            exit 1
+          fi
 
       - name: Build for macOS 12
         run: |
