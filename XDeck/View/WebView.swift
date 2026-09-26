@@ -163,6 +163,7 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
                 + "windowIsNil=\(webView.window == nil) isHidden=\(webView.isHidden) "
                 + "alphaValue=\(webView.alphaValue)")
         logPageDiagnostics(for: webView)
+        scheduleResourceSnapshots(for: webView)
     }
 
     func webView(
@@ -499,6 +500,143 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
                     + "title=\(String(reflecting: title)) location=\(host)\(path) "
                     + "bodyExists=\(bodyExistsText) bodyChildCount=\(bodyChildCountText) "
                     + "layout {\(layoutDiagnostics)} structure {\(structureDiagnostics)}")
+        }
+    }
+
+    private func scheduleResourceSnapshots(for webView: WKWebView) {
+        guard owner.url.host == "x.com", owner.url.path == "/login" else { return }
+
+        logResourceSnapshot(for: webView, elapsedLabel: "didFinish")
+        let delayedSnapshots: [(TimeInterval, String)] = [(1, "1s"), (3, "3s"), (10, "10s")]
+        for (delay, elapsedLabel) in delayedSnapshots {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self, weak webView] in
+                guard let self = self, let webView = webView else { return }
+                self.logResourceSnapshot(for: webView, elapsedLabel: elapsedLabel)
+            }
+        }
+    }
+
+    private func logResourceSnapshot(for webView: WKWebView, elapsedLabel: String) {
+        let expression = """
+            (() => {
+                const body = document.body;
+                const safeLocation = function (value) {
+                    try {
+                        const url = new URL(value, window.location.href);
+                        if (url.protocol !== "http:" && url.protocol !== "https:") {
+                            return "<non-http resource>";
+                        }
+                        return url.host + (url.pathname || "/");
+                    } catch (error) {
+                        return "<unavailable>";
+                    }
+                };
+                const entries = performance.getEntriesByType("resource");
+                const resources = entries.map(function (entry) {
+                    return {
+                        initiatorType: String(entry.initiatorType || "<unknown>"),
+                        location: safeLocation(entry.name),
+                        duration: Math.round(entry.duration),
+                        transferSize: entry.transferSize,
+                        encodedBodySize: entry.encodedBodySize,
+                        decodedBodySize: entry.decodedBodySize
+                    };
+                });
+                const resourcePriority = function (resource) {
+                    if (resource.location.indexOf("/entry-client-logged-out-") !== -1
+                        && resource.location.endsWith(".js")) return 0;
+                    if (resource.initiatorType === "link" || resource.location.endsWith(".css")) return 1;
+                    if (resource.initiatorType === "fetch" || resource.initiatorType === "xmlhttprequest") return 2;
+                    return 3;
+                };
+                resources.sort(function (left, right) {
+                    return resourcePriority(left) - resourcePriority(right);
+                });
+
+                const counts = {};
+                entries.forEach(function (entry) {
+                    const type = String(entry.initiatorType || "<unknown>");
+                    counts[type] = (counts[type] || 0) + 1;
+                });
+                const initiatorCounts = Object.keys(counts).sort().map(function (type) {
+                    return { initiatorType: type, count: counts[type] };
+                });
+
+                return {
+                    readyState: document.readyState,
+                    elementCount: document.querySelectorAll("*").length,
+                    bodyDescendantElementCount: body ? body.querySelectorAll("*").length : null,
+                    hasLayers: document.querySelector("#layers") !== null,
+                    hasRoot: document.querySelector("#root") !== null,
+                    hasReactRoot: document.querySelector("#react-root") !== null,
+                    bodyScrollWidth: body ? body.scrollWidth : null,
+                    bodyScrollHeight: body ? body.scrollHeight : null,
+                    resources: resources,
+                    initiatorCounts: initiatorCounts
+                };
+            })()
+            """
+
+        webView.evaluateJavaScript(expression) { result, error in
+            if let error = error {
+                let nsError = error as NSError
+                WebViewDiagnostics.log(
+                    "snapshot elapsed=\(elapsedLabel) diagnostic failed NSError "
+                        + "domain=\(String(reflecting: nsError.domain)) code=\(nsError.code) "
+                        + "localizedDescription=\(String(reflecting: WebViewDiagnostics.sanitized(nsError.localizedDescription)))")
+                return
+            }
+
+            guard let diagnostics = result as? [String: Any] else {
+                WebViewDiagnostics.log("snapshot elapsed=\(elapsedLabel) returned no dictionary")
+                return
+            }
+
+            func safeText(_ value: Any?) -> String {
+                guard let value = value as? String else { return "<unavailable>" }
+                return String(WebViewDiagnostics.sanitized(value).prefix(500))
+            }
+
+            func safeNumber(_ value: Any?) -> String {
+                guard let value = value as? NSNumber else { return "<unavailable>" }
+                return value.stringValue
+            }
+
+            func safeBoolean(_ value: Any?) -> String {
+                guard let value = value as? Bool else { return "<unavailable>" }
+                return value ? "true" : "false"
+            }
+
+            WebViewDiagnostics.log(
+                "snapshot elapsed=\(elapsedLabel) "
+                    + "readyState=\(safeText(diagnostics["readyState"])) "
+                    + "elementCount=\(safeNumber(diagnostics["elementCount"])) "
+                    + "bodyDescendantElementCount=\(safeNumber(diagnostics["bodyDescendantElementCount"])) "
+                    + "hasLayers=\(safeBoolean(diagnostics["hasLayers"])) "
+                    + "hasRoot=\(safeBoolean(diagnostics["hasRoot"])) "
+                    + "hasReactRoot=\(safeBoolean(diagnostics["hasReactRoot"])) "
+                    + "bodyScrollWidth=\(safeNumber(diagnostics["bodyScrollWidth"])) "
+                    + "bodyScrollHeight=\(safeNumber(diagnostics["bodyScrollHeight"]))")
+
+            let resources = diagnostics["resources"] as? [[String: Any]] ?? []
+            for resource in resources {
+                WebViewDiagnostics.log(
+                    "resource elapsed=\(elapsedLabel) "
+                        + "initiatorType=\(safeText(resource["initiatorType"])) "
+                        + "location=\(safeText(resource["location"])) "
+                        + "durationMs=\(safeNumber(resource["duration"])) "
+                        + "transferSize=\(safeNumber(resource["transferSize"])) "
+                        + "encodedBodySize=\(safeNumber(resource["encodedBodySize"])) "
+                        + "decodedBodySize=\(safeNumber(resource["decodedBodySize"]))")
+            }
+
+            let counts = diagnostics["initiatorCounts"] as? [[String: Any]] ?? []
+            let countSummary = counts.map { count in
+                "\(safeText(count["initiatorType"]))=\(safeNumber(count["count"]))"
+            }.joined(separator: " ")
+            WebViewDiagnostics.log(
+                "resource initiator counts elapsed=\(elapsedLabel) "
+                    + (countSummary.isEmpty ? "<none>" : countSummary))
         }
     }
 }
