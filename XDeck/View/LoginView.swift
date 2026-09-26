@@ -13,8 +13,7 @@ struct LoginView: View {
             WebView(
                 isLoading: $isLoading, url: $url, alertMessage: $alertMessage,
                 messageFromWebView: $loginViewMessage,
-                scriptExecutionRequest: scriptExecutionRequest,
-                configuration: WebViewConfigurations.makeConfiguration(onLoadScripts: [.findUserName, .findThemeColor]))
+                scriptExecutionRequest: scriptExecutionRequest)
         }
         .padding()
         .onChange(of: alertMessage) { message in
