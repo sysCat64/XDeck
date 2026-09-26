@@ -287,6 +287,78 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
                 const root = document.documentElement;
                 const bodyRect = body ? body.getBoundingClientRect() : null;
                 const bodyStyle = body ? getComputedStyle(body) : null;
+                const hostPath = function (value) {
+                    if (value === null || typeof value === "undefined") return "<unavailable>";
+                    try {
+                        const resourceURL = new URL(value, document.baseURI);
+                        if (resourceURL.protocol !== "http:" && resourceURL.protocol !== "https:") {
+                            return "<non-http resource>";
+                        }
+                        return resourceURL.host + (resourceURL.pathname || "/");
+                    } catch (error) {
+                        return "<unavailable>";
+                    }
+                };
+                const availability = function (check) {
+                    try {
+                        return Boolean(check());
+                    } catch (error) {
+                        return false;
+                    }
+                };
+                const scripts = Array.prototype.map.call(document.scripts, function (script, index) {
+                    const hasSource = script.hasAttribute("src");
+                    return {
+                        index: index,
+                        src: hasSource ? hostPath(script.getAttribute("src")) : "<inline>",
+                        type: script.type || "",
+                        async: Boolean(script.async),
+                        defer: Boolean(script.defer),
+                        nomodule: Boolean(script.noModule),
+                        inlineTextLength: hasSource ? null : script.textContent.length
+                    };
+                });
+                const stylesheetLinks = Array.prototype.map.call(
+                    document.querySelectorAll('link[rel~="stylesheet"]'), function (link) {
+                        return {
+                            location: hostPath(link.getAttribute("href")),
+                            media: link.media || ""
+                        };
+                    });
+                const capabilities = {
+                    fetch: availability(function () { return typeof window.fetch === "function"; }),
+                    Promise: availability(function () { return typeof window.Promise === "function"; }),
+                    WebAssembly: availability(function () { return typeof window.WebAssembly !== "undefined"; }),
+                    BigInt: availability(function () { return typeof window.BigInt === "function"; }),
+                    globalThis: availability(function () { return typeof globalThis !== "undefined"; }),
+                    AbortController: availability(function () { return typeof window.AbortController === "function"; }),
+                    TextEncoder: availability(function () { return typeof window.TextEncoder === "function"; }),
+                    ResizeObserver: availability(function () { return typeof window.ResizeObserver === "function"; }),
+                    IntersectionObserver: availability(function () { return typeof window.IntersectionObserver === "function"; }),
+                    "crypto.subtle": availability(function () {
+                        return typeof window.crypto !== "undefined" && Boolean(window.crypto.subtle);
+                    }),
+                    indexedDB: availability(function () { return typeof window.indexedDB !== "undefined" && Boolean(window.indexedDB); }),
+                    "navigator.serviceWorker": availability(function () {
+                        return typeof navigator !== "undefined" && Boolean(navigator.serviceWorker);
+                    }),
+                    localStorageAccess: availability(function () { return Boolean(window.localStorage); }),
+                    sessionStorageAccess: availability(function () { return Boolean(window.sessionStorage); })
+                };
+                const bodyChildren = body ? Array.prototype.map.call(body.children, function (child) {
+                    const rect = child.getBoundingClientRect();
+                    const style = getComputedStyle(child);
+                    return {
+                        tag: String(child.tagName || "").toLowerCase(),
+                        id: child.id || "",
+                        className: child.getAttribute("class") || "",
+                        width: rect.width,
+                        height: rect.height,
+                        display: style.display,
+                        visibility: style.visibility,
+                        opacity: style.opacity
+                    };
+                }) : [];
                 return {
                     userAgent: navigator.userAgent,
                     readyState: document.readyState,
@@ -313,7 +385,11 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
                     hasDataReactRoot: document.querySelector("[data-reactroot]") !== null,
                     hasReactRoot: document.querySelector("#react-root") !== null,
                     hasRoot: document.querySelector("#root") !== null,
-                    hasLayers: document.querySelector("#layers") !== null
+                    hasLayers: document.querySelector("#layers") !== null,
+                    scripts: scripts,
+                    stylesheetLinks: stylesheetLinks,
+                    capabilities: capabilities,
+                    bodyChildren: bodyChildren
                 };
             })()
             """
@@ -357,6 +433,65 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
             let structureDiagnostics = structureKeys.map { key in
                 "\(key)=\(diagnostics[key].map { String(describing: $0) } ?? "<unavailable>")"
             }.joined(separator: " ")
+
+            func diagnosticText(_ value: Any?) -> String {
+                guard let value = value as? String else { return "<unavailable>" }
+                return String(WebViewDiagnostics.sanitized(value).prefix(500))
+            }
+
+            func diagnosticNumber(_ value: Any?) -> String {
+                guard let value = value as? NSNumber else { return "<unavailable>" }
+                return value.stringValue
+            }
+
+            func diagnosticBoolean(_ value: Any?) -> String {
+                guard let value = value as? Bool else { return "<unavailable>" }
+                return value ? "true" : "false"
+            }
+
+            let scripts = diagnostics["scripts"] as? [[String: Any]] ?? []
+            for script in scripts {
+                let inlineLength = script["inlineTextLength"] is NSNull
+                    ? "<not-inline>" : diagnosticNumber(script["inlineTextLength"])
+                WebViewDiagnostics.log(
+                    "script index=\(diagnosticNumber(script["index"])) "
+                        + "src=\(diagnosticText(script["src"])) "
+                        + "type=\(String(reflecting: diagnosticText(script["type"]))) "
+                        + "async=\(diagnosticBoolean(script["async"])) "
+                        + "defer=\(diagnosticBoolean(script["defer"])) "
+                        + "nomodule=\(diagnosticBoolean(script["nomodule"])) "
+                        + "inlineTextLength=\(inlineLength)")
+            }
+
+            let stylesheetLinks = diagnostics["stylesheetLinks"] as? [[String: Any]] ?? []
+            for stylesheet in stylesheetLinks {
+                WebViewDiagnostics.log(
+                    "stylesheet location=\(diagnosticText(stylesheet["location"])) "
+                        + "media=\(String(reflecting: diagnosticText(stylesheet["media"])))")
+            }
+
+            let capabilityKeys = [
+                "fetch", "Promise", "WebAssembly", "BigInt", "globalThis", "AbortController",
+                "TextEncoder", "ResizeObserver", "IntersectionObserver", "crypto.subtle", "indexedDB",
+                "navigator.serviceWorker", "localStorageAccess", "sessionStorageAccess"
+            ]
+            let capabilities = diagnostics["capabilities"] as? [String: Any] ?? [:]
+            let capabilityDiagnostics = capabilityKeys.map { key in
+                "\(key)=\(diagnosticBoolean(capabilities[key]))"
+            }.joined(separator: " ")
+            WebViewDiagnostics.log("browser capabilities {\(capabilityDiagnostics)}")
+
+            let bodyChildren = diagnostics["bodyChildren"] as? [[String: Any]] ?? []
+            for child in bodyChildren {
+                WebViewDiagnostics.log(
+                    "body child tag=\(diagnosticText(child["tag"])) "
+                        + "id=\(String(reflecting: diagnosticText(child["id"]))) "
+                        + "class=\(String(reflecting: diagnosticText(child["className"]))) "
+                        + "rect=\(diagnosticNumber(child["width"]))x\(diagnosticNumber(child["height"])) "
+                        + "display=\(diagnosticText(child["display"])) "
+                        + "visibility=\(diagnosticText(child["visibility"])) "
+                        + "opacity=\(diagnosticText(child["opacity"]))")
+            }
 
             WebViewDiagnostics.log(
                 "didFinish JavaScript userAgent=\(String(reflecting: userAgent)) "
