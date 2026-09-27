@@ -266,6 +266,15 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
             WebViewDiagnostics.log(
                 "resource load failure element=\(safeString("element")) "
                     + "location=\(safeString("location"))")
+        case "stylesheetInsertion":
+            let jetfuel = diagnostic["jetfuel"] as? Bool ?? false
+            WebViewDiagnostics.log(
+                "stylesheet insertion location=\(safeString("location")) jetfuel=\(jetfuel)")
+        case "jetfuelStylesheetEvent":
+            let event = safeString("event")
+            guard event == "load" || event == "error" else { return }
+            WebViewDiagnostics.log(
+                "jetfuel stylesheet event=\(event) location=\(safeString("location"))")
         case "entryModuleEvent":
             let event = safeString("event")
             guard event == "load" || event == "error" else { return }

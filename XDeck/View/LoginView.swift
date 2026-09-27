@@ -56,6 +56,197 @@ struct LoginView: View {
                 } catch (ignored) {}
             }
 
+            // Observe only stylesheet links, without changing their attributes or insertion behavior.
+            if (window === window.top) {
+                var loggedStylesheetEvents = Object.create(null);
+                var observedJetfuelLinks = new WeakSet();
+                var observedHead = null;
+                var observedDocumentElement = null;
+                var waitingForDocumentElement = false;
+                var headObserver = new MutationObserver(function(records) {
+                    records.forEach(function(record) {
+                        Array.prototype.forEach.call(record.addedNodes, inspectHeadAddedNode);
+                    });
+                });
+                var documentElementObserver = new MutationObserver(function(records) {
+                    if (!observedDocumentElement) {
+                        attachDocumentElementObserver();
+                        return;
+                    }
+                    records.forEach(function(record) {
+                        Array.prototype.forEach.call(record.addedNodes, inspectDocumentTreeNode);
+                    });
+                });
+
+                function isStylesheetLink(element) {
+                    try {
+                        if (!element || element.nodeType !== 1
+                            || String(element.tagName || "").toUpperCase() !== "LINK") return false;
+                        var rel = String(element.rel || element.getAttribute("rel") || "").toLowerCase();
+                        return rel.split(/\s+/).indexOf("stylesheet") !== -1;
+                    } catch (ignored) {
+                        return false;
+                    }
+                }
+
+                function stylesheetInfo(element) {
+                    try {
+                        if (!isStylesheetLink(element)) return null;
+                        var href = element.getAttribute("href") || element.href;
+                        if (!href) return null;
+                        var url = new URL(href, document.baseURI);
+                        var pathname = url.pathname || "/";
+                        return {
+                            location: url.host + pathname,
+                            jetfuel: pathname.toLowerCase().indexOf("use-jetfuel-dev-") !== -1
+                        };
+                    } catch (ignored) {
+                        return null;
+                    }
+                }
+
+                function sendStylesheetEvent(eventName, info) {
+                    var key = JSON.stringify([info.location, eventName]);
+                    if (loggedStylesheetEvents[key]) return;
+                    loggedStylesheetEvents[key] = true;
+                    if (eventName === "insert") {
+                        sendDiagnostic({
+                            type: "stylesheetInsertion",
+                            location: info.location,
+                            jetfuel: info.jetfuel
+                        });
+                    } else {
+                        sendDiagnostic({
+                            type: "jetfuelStylesheetEvent",
+                            event: eventName,
+                            location: info.location
+                        });
+                    }
+                }
+
+                function observeInsertedStylesheet(element) {
+                    try {
+                        if (!element || !element.isConnected) return;
+                        var info = stylesheetInfo(element);
+                        if (!info) return;
+                        sendStylesheetEvent("insert", info);
+                        if (!info.jetfuel || observedJetfuelLinks.has(element)) return;
+                        observedJetfuelLinks.add(element);
+                        element.addEventListener("load", function() {
+                            sendStylesheetEvent("load", info);
+                        });
+                        element.addEventListener("error", function() {
+                            sendStylesheetEvent("error", info);
+                        });
+                    } catch (ignored) {}
+                }
+
+                function inspectHeadAddedNode(node) {
+                    try {
+                        if (isStylesheetLink(node)) observeInsertedStylesheet(node);
+                        if (!node || typeof node.querySelectorAll !== "function") return;
+                        Array.prototype.forEach.call(
+                            node.querySelectorAll('link[rel~="stylesheet"]'), observeInsertedStylesheet);
+                    } catch (ignored) {}
+                }
+
+                function inspectDocumentTreeNode(node) {
+                    try {
+                        if (!node) return;
+                        if (String(node.tagName || "").toUpperCase() === "HEAD") {
+                            attachHeadObserver();
+                            return;
+                        }
+                        if (isStylesheetLink(node)) observeInsertedStylesheet(node);
+                        if (typeof node.querySelectorAll !== "function") return;
+                        Array.prototype.forEach.call(
+                            node.querySelectorAll('head, link[rel~="stylesheet"]'), function(element) {
+                                if (String(element.tagName || "").toUpperCase() === "HEAD") {
+                                    attachHeadObserver();
+                                } else {
+                                    observeInsertedStylesheet(element);
+                                }
+                            });
+                    } catch (ignored) {}
+                }
+
+                function captureDirectStylesheetLinks(node) {
+                    var links = [];
+                    try {
+                        if (isStylesheetLink(node)) {
+                            links.push(node);
+                        } else if (node && node.nodeType === 11) {
+                            Array.prototype.forEach.call(node.childNodes, function(child) {
+                                if (isStylesheetLink(child)) {
+                                    links.push(child);
+                                }
+                            });
+                        }
+                    } catch (ignored) {}
+                    return links;
+                }
+
+                function attachHeadObserver() {
+                    try {
+                        var head = document.head;
+                        if (!head) return;
+                        if (head !== observedHead) {
+                            if (observedHead) headObserver.disconnect();
+                            observedHead = head;
+                            inspectHeadAddedNode(head);
+                            headObserver.observe(head, {childList: true, subtree: true});
+                        }
+                        if (observedDocumentElement || waitingForDocumentElement) {
+                            documentElementObserver.disconnect();
+                            observedDocumentElement = null;
+                            waitingForDocumentElement = false;
+                        }
+                    } catch (ignored) {}
+                }
+
+                function attachDocumentElementObserver() {
+                    try {
+                        var root = document.documentElement;
+                        if (!root) {
+                            if (!waitingForDocumentElement) {
+                                waitingForDocumentElement = true;
+                                documentElementObserver.observe(document, {childList: true});
+                            }
+                            return;
+                        }
+                        if (root === observedDocumentElement) return;
+                        documentElementObserver.disconnect();
+                        waitingForDocumentElement = false;
+                        observedDocumentElement = root;
+                        documentElementObserver.observe(root, {childList: true, subtree: true});
+                        inspectDocumentTreeNode(root);
+                    } catch (ignored) {}
+                }
+
+                // Document.prototype.createElement is not used as evidence: rel is usually set after createElement("link").
+                function wrapInsertionMethod(methodName) {
+                    try {
+                        var originalMethod = Node.prototype[methodName];
+                        if (typeof originalMethod !== "function") return;
+                        Node.prototype[methodName] = function() {
+                            var insertedNode = arguments[0];
+                            var stylesheetLinks = captureDirectStylesheetLinks(insertedNode);
+                            var result = originalMethod.apply(this, arguments);
+                            try {
+                                attachHeadObserver();
+                                stylesheetLinks.forEach(observeInsertedStylesheet);
+                                if (this === document.head) inspectHeadAddedNode(insertedNode);
+                            } catch (ignored) {}
+                            return result;
+                        };
+                    } catch (ignored) {}
+                }
+
+                wrapInsertionMethod("appendChild");
+                wrapInsertionMethod("insertBefore");
+                attachDocumentElementObserver();
+            }
+
             var parsePolyfilled = false;
             var canParsePolyfilled = false;
             if (window === window.top && typeof URL === "function") {
