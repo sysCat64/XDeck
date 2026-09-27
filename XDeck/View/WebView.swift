@@ -655,8 +655,10 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
     private func scheduleNativePageWorldProbe(for webView: WKWebView) {
         guard isLoginFlowURL(webView.url) else { return }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak webView] in
-            guard let webView = webView, isLoginFlowURL(webView.url) else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self, weak webView] in
+            guard let self = self,
+                  let webView = webView,
+                  self.isLoginFlowURL(webView.url) else { return }
 
             let expression = #"""
                 (() => {
