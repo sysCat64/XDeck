@@ -390,6 +390,8 @@ struct LoginView: View {
             if (window === window.top) {
                 var hydrationProbeFinished = false;
                 var bootstrapObserved = false;
+                var initializedPropertyObserved = false;
+                var initializedTrueObserved = false;
                 var hydratedPropertyObserved = false;
                 var hydratedTrueObserved = false;
                 var bootstrapDeletionObserved = false;
@@ -430,6 +432,23 @@ struct LoginView: View {
                         var bootstrap = bootstrapDescriptor.value;
                         if (bootstrap !== null
                             && (typeof bootstrap === "object" || typeof bootstrap === "function")) {
+                            var initializedDescriptor;
+                            try {
+                                initializedDescriptor = Object.getOwnPropertyDescriptor(bootstrap, "initialized");
+                            } catch (ignored) {}
+
+                            if (initializedDescriptor
+                                && Object.prototype.hasOwnProperty.call(initializedDescriptor, "value")) {
+                                initializedPropertyObserved = true;
+                                if (initializedDescriptor.value === true && !initializedTrueObserved) {
+                                    initializedTrueObserved = true;
+                                    sendDiagnostic({
+                                        type: "routerHydrationProbe",
+                                        status: "initialized"
+                                    });
+                                }
+                            }
+
                             var hydratedDescriptor;
                             try {
                                 hydratedDescriptor = Object.getOwnPropertyDescriptor(bootstrap, "hydrated");
@@ -473,6 +492,8 @@ struct LoginView: View {
                                 type: "routerHydrationProbe",
                                 status: "completion-not-observed",
                                 bootstrapObserved: bootstrapObserved,
+                                initializedPropertyObserved: initializedPropertyObserved,
+                                initializedTrueObserved: initializedTrueObserved,
                                 hydratedPropertyObserved: hydratedPropertyObserved,
                                 hydratedTrueObserved: hydratedTrueObserved,
                                 bootstrapDeletionObserved: bootstrapDeletionObserved
