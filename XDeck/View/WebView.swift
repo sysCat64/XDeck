@@ -326,6 +326,19 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
                     + "visibleJetfuelElementCount=\(safeNumber("visibleJetfuelElementCount")) "
                     + "jetfuelStylesheetPresent=\(safeBoolean("jetfuelStylesheetPresent")) "
                     + "hasLayers=\(safeBoolean("hasLayers"))")
+        case "routeLazyLoaderProbe":
+            switch diagnostic["status"] as? String {
+            case "started":
+                WebViewDiagnostics.log("route lazy-loader probe status=started")
+            case "resolved":
+                WebViewDiagnostics.log("route lazy-loader probe status=resolved")
+            case "rejected":
+                WebViewDiagnostics.log(
+                    "route lazy-loader probe status=rejected "
+                        + "name=\(safeString("name")) message=\(safeString("message"))")
+            default:
+                break
+            }
         default:
             break
         }

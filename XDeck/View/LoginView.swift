@@ -432,6 +432,7 @@ struct LoginView: View {
                 function reportRouteModuleProbeResult(payload) {
                     sendDiagnostic(payload);
                     window.setTimeout(reportRouteModulePostImportState, 250);
+                    window.setTimeout(probeRouteLazyLoader, 1000);
                 }
 
                 function isExplicitModuleNetworkFailure(name, message) {
@@ -471,6 +472,77 @@ struct LoginView: View {
                 window.addEventListener("load", function() {
                     window.setTimeout(probeRouteModuleEvaluation, 3000);
                 }, true);
+
+                var routeLazyLoaderProbeStarted = false;
+
+                function reportRouteLazyLoaderRejected(error) {
+                    var name = "<unknown>";
+                    var message = "<unavailable>";
+                    try {
+                        if (typeof error === "string") {
+                            message = error;
+                        } else if (error) {
+                            if (typeof error.name === "string") name = error.name;
+                            if (typeof error.message === "string") message = error.message;
+                        }
+                    } catch (ignored) {}
+                    sendDiagnostic({
+                        type: "routeLazyLoaderProbe",
+                        status: "rejected",
+                        name: safeText(name),
+                        message: safeText(message)
+                    });
+                }
+
+                function invokeRouteLazyLoader(routeModule) {
+                    var route = routeModule && routeModule.t;
+                    var component = route && route.options && route.options.component;
+                    if (!component) {
+                        throw new Error("onboarding route component is unavailable in route manifest");
+                    }
+                    if (typeof component.preload !== "function") {
+                        reportRouteLazyLoaderRejected(
+                            new Error("onboarding route component preload function is unavailable"));
+                        return;
+                    }
+
+                    var preloadFailure = null;
+                    function observePreloadFailure(event) {
+                        if (event && event.payload && !preloadFailure) preloadFailure = event.payload;
+                    }
+                    window.addEventListener("vite:preloadError", observePreloadFailure);
+
+                    var preloadPromise;
+                    try {
+                        preloadPromise = component.preload();
+                    } catch (error) {
+                        window.removeEventListener("vite:preloadError", observePreloadFailure);
+                        reportRouteLazyLoaderRejected(error);
+                        return;
+                    }
+
+                    Promise.resolve(preloadPromise).then(function() {
+                        window.removeEventListener("vite:preloadError", observePreloadFailure);
+                        if (preloadFailure) {
+                            reportRouteLazyLoaderRejected(preloadFailure);
+                        } else {
+                            sendDiagnostic({type: "routeLazyLoaderProbe", status: "resolved"});
+                        }
+                    }, function(error) {
+                        window.removeEventListener("vite:preloadError", observePreloadFailure);
+                        reportRouteLazyLoaderRejected(error);
+                    });
+                }
+
+                function probeRouteLazyLoader() {
+                    if (routeLazyLoaderProbeStarted) return;
+                    routeLazyLoaderProbeStarted = true;
+                    sendDiagnostic({type: "routeLazyLoaderProbe", status: "started"});
+                    import("https://abs.twimg.com/x-web/x-web/assets/web-Bts3i53A.js")
+                        .then(invokeRouteLazyLoader)
+                        .catch(reportRouteLazyLoaderRejected);
+                }
+
             }
 
             window.addEventListener("unhandledrejection", function(event) {
