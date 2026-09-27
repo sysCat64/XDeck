@@ -164,6 +164,7 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
                 + "alphaValue=\(webView.alphaValue)")
         logPageDiagnostics(for: webView)
         scheduleResourceSnapshots(for: webView)
+        scheduleNativePageWorldProbe(for: webView)
     }
 
     func webView(
@@ -649,6 +650,135 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
                 self.logResourceSnapshot(for: webView, elapsedLabel: elapsedLabel)
             }
         }
+    }
+
+    private func scheduleNativePageWorldProbe(for webView: WKWebView) {
+        guard isLoginFlowURL(webView.url) else { return }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak webView] in
+            guard let webView = webView, isLoginFlowURL(webView.url) else { return }
+
+            let expression = #"""
+                (() => {
+                    let location = "<unavailable>";
+                    const scripts = document.getElementsByTagName("script");
+                    for (let index = 0; index < scripts.length; index += 1) {
+                        const script = scripts[index];
+                        if (String(script.type || "").toLowerCase() !== "module"
+                            || !script.hasAttribute("src")
+                            || script.src.indexOf("/entry-client-logged-out-") === -1) continue;
+                        try {
+                            const url = new URL(script.src);
+                            if (url.protocol === "http:" || url.protocol === "https:") {
+                                location = url.host + (url.pathname || "/");
+                            }
+                        } catch (ignored) {}
+                        break;
+                    }
+
+                    let reactContainerMarkerPresent = false;
+                    try {
+                        const propertyNames = Object.getOwnPropertyNames(document);
+                        for (let index = 0; index < propertyNames.length; index += 1) {
+                            const propertyName = propertyNames[index];
+                            if (propertyName.indexOf("__reactContainer$") !== 0) continue;
+                            const descriptor = Object.getOwnPropertyDescriptor(document, propertyName);
+                            if (descriptor
+                                && Object.prototype.hasOwnProperty.call(descriptor, "value")) {
+                                reactContainerMarkerPresent = true;
+                                break;
+                            }
+                        }
+                    } catch (ignored) {}
+
+                    let bootstrapPresent = false;
+                    let initializedPropertyPresent = false;
+                    let initializedTrue = false;
+                    try {
+                        const bootstrapDescriptor = Object.getOwnPropertyDescriptor(window, "$_TSR");
+                        if (bootstrapDescriptor
+                            && Object.prototype.hasOwnProperty.call(bootstrapDescriptor, "value")) {
+                            bootstrapPresent = true;
+                            const bootstrap = bootstrapDescriptor.value;
+                            if (bootstrap !== null && typeof bootstrap === "object") {
+                                const initializedDescriptor = Object.getOwnPropertyDescriptor(bootstrap, "initialized");
+                                if (initializedDescriptor
+                                    && Object.prototype.hasOwnProperty.call(initializedDescriptor, "value")) {
+                                    initializedPropertyPresent = true;
+                                    initializedTrue = initializedDescriptor.value === true;
+                                }
+                            }
+                        }
+                    } catch (ignored) {}
+
+                    let detachedDocumentExpandoObservable = false;
+                    try {
+                        const detachedDocument = document.implementation.createHTMLDocument("");
+                        const expandoName = "__xdeckDetachedDocumentExpandoProbe__";
+                        detachedDocument[expandoName] = true;
+                        const detachedPropertyNames = Object.getOwnPropertyNames(detachedDocument);
+                        if (detachedPropertyNames.indexOf(expandoName) !== -1) {
+                            const detachedDescriptor = Object.getOwnPropertyDescriptor(
+                                detachedDocument, expandoName);
+                            detachedDocumentExpandoObservable = Boolean(detachedDescriptor
+                                && Object.prototype.hasOwnProperty.call(detachedDescriptor, "value")
+                                && detachedDescriptor.value === true);
+                        }
+                    } catch (ignored) {}
+
+                    return {
+                        location: location,
+                        reactContainerMarkerPresent: reactContainerMarkerPresent,
+                        bootstrapPresent: bootstrapPresent,
+                        initializedPropertyPresent: initializedPropertyPresent,
+                        initializedTrue: initializedTrue,
+                        readyState: document.readyState,
+                        windowIsTop: window === window.top,
+                        detachedDocumentExpandoObservable: detachedDocumentExpandoObservable
+                    };
+                })()
+                """#
+
+            webView.evaluateJavaScript(expression, in: nil, in: WKContentWorld.page) { result in
+                switch result {
+                case .success(let value):
+                    guard let diagnostics = value as? [String: Any] else {
+                        WebViewDiagnostics.log("native page-world probe returned no dictionary")
+                        return
+                    }
+
+                    func diagnosticString(_ key: String) -> String {
+                        guard let value = diagnostics[key] as? String else { return "<unavailable>" }
+                        return String(WebViewDiagnostics.sanitized(value).prefix(500))
+                    }
+
+                    func diagnosticBoolean(_ key: String) -> String {
+                        guard let value = diagnostics[key] as? Bool else { return "<unavailable>" }
+                        return value ? "true" : "false"
+                    }
+
+                    WebViewDiagnostics.log(
+                        "native page-world probe "
+                            + "location=\(diagnosticString("location")) "
+                            + "reactContainerMarkerPresent=\(diagnosticBoolean("reactContainerMarkerPresent")) "
+                            + "bootstrapPresent=\(diagnosticBoolean("bootstrapPresent")) "
+                            + "initializedPropertyPresent=\(diagnosticBoolean("initializedPropertyPresent")) "
+                            + "initializedTrue=\(diagnosticBoolean("initializedTrue")) "
+                            + "readyState=\(diagnosticString("readyState")) "
+                            + "windowIsTop=\(diagnosticBoolean("windowIsTop")) "
+                            + "detachedDocumentExpandoObservable=\(diagnosticBoolean("detachedDocumentExpandoObservable"))")
+                case .failure(let error):
+                    WebViewDiagnostics.log(
+                        "native page-world probe failed "
+                            + String(WebViewDiagnostics.sanitized(error.localizedDescription).prefix(500)))
+                }
+            }
+        }
+    }
+
+    private func isLoginFlowURL(_ url: URL?) -> Bool {
+        guard let url = url, url.host == "x.com" else { return false }
+        return url.path == "/login" || url.path == "/i/jf/onboarding/web"
     }
 
     private func logResourceSnapshot(for webView: WKWebView, elapsedLabel: String) {
