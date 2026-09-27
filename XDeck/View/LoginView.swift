@@ -56,6 +56,51 @@ struct LoginView: View {
                 } catch (ignored) {}
             }
 
+            var parsePolyfilled = false;
+            var canParsePolyfilled = false;
+            if (window === window.top && typeof URL === "function") {
+                if (typeof URL.canParse !== "function") {
+                    try {
+                        URL.canParse = function(input, base) {
+                            try {
+                                if (arguments.length >= 2) {
+                                    new URL(input, base);
+                                } else {
+                                    new URL(input);
+                                }
+                                return true;
+                            } catch (ignored) {
+                                return false;
+                            }
+                        };
+                        canParsePolyfilled = typeof URL.canParse === "function";
+                    } catch (ignored) {}
+                }
+
+                if (typeof URL.parse !== "function") {
+                    try {
+                        URL.parse = function(input, base) {
+                            try {
+                                if (arguments.length >= 2) {
+                                    return new URL(input, base);
+                                }
+                                return new URL(input);
+                            } catch (ignored) {
+                                return null;
+                            }
+                        };
+                        parsePolyfilled = typeof URL.parse === "function";
+                    } catch (ignored) {}
+                }
+
+                if (window.console && typeof window.console.log === "function") {
+                    window.console.log(
+                        "[XDeck WebView] URL compatibility probe "
+                            + "parsePolyfilled=" + parsePolyfilled
+                            + " canParsePolyfilled=" + canParsePolyfilled);
+                }
+            }
+
             window.addEventListener("error", function(event) {
                 var target = event.target;
                 if (target && target !== window && target.nodeType === 1) {
