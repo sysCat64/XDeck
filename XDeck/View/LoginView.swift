@@ -386,6 +386,102 @@ struct LoginView: View {
                 }
             }
 
+            // Observe hydration completion through own data descriptors only.
+            if (window === window.top) {
+                var hydrationProbeFinished = false;
+                var bootstrapObserved = false;
+                var hydratedPropertyObserved = false;
+                var hydratedTrueObserved = false;
+                var bootstrapDeletionObserved = false;
+                var hydrationProbeInterval = null;
+                var hydrationProbeTimeout = null;
+
+                function stopRouterHydrationProbe() {
+                    if (hydrationProbeInterval !== null) {
+                        window.clearInterval(hydrationProbeInterval);
+                        hydrationProbeInterval = null;
+                    }
+                    if (hydrationProbeTimeout !== null) {
+                        window.clearTimeout(hydrationProbeTimeout);
+                        hydrationProbeTimeout = null;
+                    }
+                }
+
+                function pollRouterHydrationState() {
+                    if (hydrationProbeFinished) return;
+
+                    var bootstrapDescriptor;
+                    try {
+                        bootstrapDescriptor = Object.getOwnPropertyDescriptor(window, "$_TSR");
+                    } catch (ignored) {
+                        return;
+                    }
+
+                    if (bootstrapDescriptor
+                        && Object.prototype.hasOwnProperty.call(bootstrapDescriptor, "value")) {
+                        if (!bootstrapObserved) {
+                            bootstrapObserved = true;
+                            sendDiagnostic({
+                                type: "routerHydrationProbe",
+                                status: "bootstrap-observed"
+                            });
+                        }
+
+                        var bootstrap = bootstrapDescriptor.value;
+                        if (bootstrap !== null
+                            && (typeof bootstrap === "object" || typeof bootstrap === "function")) {
+                            var hydratedDescriptor;
+                            try {
+                                hydratedDescriptor = Object.getOwnPropertyDescriptor(bootstrap, "hydrated");
+                            } catch (ignored) {}
+
+                            if (hydratedDescriptor
+                                && Object.prototype.hasOwnProperty.call(hydratedDescriptor, "value")) {
+                                hydratedPropertyObserved = true;
+                                if (hydratedDescriptor.value === true && !hydratedTrueObserved) {
+                                    hydratedTrueObserved = true;
+                                    sendDiagnostic({
+                                        type: "routerHydrationProbe",
+                                        status: "hydrated"
+                                    });
+                                }
+                            }
+                        }
+                        return;
+                    }
+
+                    if (bootstrapObserved && typeof bootstrapDescriptor === "undefined") {
+                        bootstrapDeletionObserved = true;
+                        hydrationProbeFinished = true;
+                        stopRouterHydrationProbe();
+                        sendDiagnostic({
+                            type: "routerHydrationProbe",
+                            status: "bootstrap-deleted"
+                        });
+                    }
+                }
+
+                pollRouterHydrationState();
+                if (!hydrationProbeFinished) {
+                    hydrationProbeInterval = window.setInterval(pollRouterHydrationState, 15);
+                    hydrationProbeTimeout = window.setTimeout(function() {
+                        if (hydrationProbeFinished) return;
+                        hydrationProbeFinished = true;
+                        stopRouterHydrationProbe();
+                        if (!hydratedTrueObserved && !bootstrapDeletionObserved) {
+                            sendDiagnostic({
+                                type: "routerHydrationProbe",
+                                status: "completion-not-observed",
+                                bootstrapObserved: bootstrapObserved,
+                                hydratedPropertyObserved: hydratedPropertyObserved,
+                                hydratedTrueObserved: hydratedTrueObserved,
+                                bootstrapDeletionObserved: bootstrapDeletionObserved
+                            });
+                        }
+                    }, 5000);
+                }
+            }
+
             var parsePolyfilled = false;
             var canParsePolyfilled = false;
             if (window === window.top && typeof URL === "function") {

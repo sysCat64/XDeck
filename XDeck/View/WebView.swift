@@ -372,6 +372,24 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
             default:
                 break
             }
+        case "routerHydrationProbe":
+            switch diagnostic["status"] as? String {
+            case "bootstrap-observed":
+                WebViewDiagnostics.log("router hydration probe status=bootstrap-observed")
+            case "hydrated":
+                WebViewDiagnostics.log("router hydration probe status=hydrated")
+            case "bootstrap-deleted":
+                WebViewDiagnostics.log("router hydration probe status=bootstrap-deleted")
+            case "completion-not-observed":
+                WebViewDiagnostics.log(
+                    "router hydration probe status=completion-not-observed "
+                        + "bootstrapObserved=\(safeBoolean("bootstrapObserved")) "
+                        + "hydratedPropertyObserved=\(safeBoolean("hydratedPropertyObserved")) "
+                        + "hydratedTrueObserved=\(safeBoolean("hydratedTrueObserved")) "
+                        + "bootstrapDeletionObserved=\(safeBoolean("bootstrapDeletionObserved"))")
+            default:
+                break
+            }
         default:
             break
         }
