@@ -339,6 +339,39 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
             default:
                 break
             }
+        case "routerBootstrapProbe":
+            switch diagnostic["status"] as? String {
+            case "observed":
+                WebViewDiagnostics.log(
+                    "router bootstrap probe status=observed "
+                        + "routerExists=\(safeBoolean("routerExists")) "
+                        + "matchesIsArray=\(safeBoolean("matchesIsArray")) "
+                        + "serializedMatchCount=\(safeNumber("serializedMatchCount")) "
+                        + "initializedFieldPresent=\(safeBoolean("initializedFieldPresent"))")
+
+                let matches = diagnostic["matches"] as? [[String: Any]] ?? []
+                for match in matches {
+                    func safeMatchString(_ key: String) -> String {
+                        guard let value = match[key] as? String else { return "<unavailable>" }
+                        return String(WebViewDiagnostics.sanitized(value).prefix(200))
+                    }
+
+                    WebViewDiagnostics.log(
+                        "router bootstrap match id=\(String(reflecting: safeMatchString("id"))) "
+                            + "status=\(String(reflecting: safeMatchString("status"))) "
+                            + "ssr=\(String(reflecting: safeMatchString("ssr")))")
+                }
+            case "not-observed":
+                WebViewDiagnostics.log("router bootstrap probe status=not-observed")
+            case "observed-incomplete":
+                WebViewDiagnostics.log(
+                    "router bootstrap probe status=observed-incomplete "
+                        + "routerOwnDataPropertyEverObserved=\(safeBoolean("routerOwnDataPropertyEverObserved")) "
+                        + "matchesEverObserved=\(safeBoolean("matchesEverObserved")) "
+                        + "matchesEverArray=\(safeBoolean("matchesEverArray"))")
+            default:
+                break
+            }
         default:
             break
         }

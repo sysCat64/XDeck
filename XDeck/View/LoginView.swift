@@ -247,6 +247,145 @@ struct LoginView: View {
                 attachDocumentElementObserver();
             }
 
+            if (window === window.top) {
+                var routerBootstrapProbeFinished = false;
+                var routerBootstrapEverObserved = false;
+                var routerOwnDataPropertyEverObserved = false;
+                var matchesEverObserved = false;
+                var matchesEverArray = false;
+                var routerBootstrapProbeInterval = null;
+                var routerBootstrapProbeTimeout = null;
+
+                function hasOwnDataProperty(target, key) {
+                    try {
+                        if (!target || (typeof target !== "object" && typeof target !== "function")) {
+                            return false;
+                        }
+                        var descriptor = Object.getOwnPropertyDescriptor(target, key);
+                        return Boolean(descriptor && Object.prototype.hasOwnProperty.call(descriptor, "value"));
+                    } catch (ignored) {
+                        return false;
+                    }
+                }
+
+                function readOwnDataProperty(target, key) {
+                    try {
+                        if (!target || (typeof target !== "object" && typeof target !== "function")) {
+                            return undefined;
+                        }
+                        var descriptor = Object.getOwnPropertyDescriptor(target, key);
+                        if (descriptor && Object.prototype.hasOwnProperty.call(descriptor, "value")) {
+                            return descriptor.value;
+                        }
+                    } catch (ignored) {}
+                    return undefined;
+                }
+
+                function routerMetadataString(value) {
+                    if (typeof value !== "string") {
+                        if (typeof value !== "number" && typeof value !== "boolean") {
+                            return "<unavailable>";
+                        }
+                        value = String(value);
+                    }
+                    return value.replace(/[\u0000-\u001f\u007f]/g, " ").slice(0, 200);
+                }
+
+                function stopRouterBootstrapProbe() {
+                    if (routerBootstrapProbeFinished) return;
+                    routerBootstrapProbeFinished = true;
+                    if (routerBootstrapProbeInterval !== null) {
+                        window.clearInterval(routerBootstrapProbeInterval);
+                    }
+                    if (routerBootstrapProbeTimeout !== null) {
+                        window.clearTimeout(routerBootstrapProbeTimeout);
+                    }
+                }
+
+                function captureRouterBootstrapState(bootstrap, router, matches) {
+                    stopRouterBootstrapProbe();
+
+                    var routerExists = router !== null && typeof router !== "undefined";
+                    var matchesIsArray = Array.isArray(matches);
+                    var serializedMatches = [];
+
+                    if (matchesIsArray) {
+                        for (var index = 0; index < matches.length; index += 1) {
+                            var match = matches[index];
+                            serializedMatches.push({
+                                id: routerMetadataString(readOwnDataProperty(match, "i")),
+                                status: routerMetadataString(readOwnDataProperty(match, "s")),
+                                ssr: routerMetadataString(readOwnDataProperty(match, "ssr"))
+                            });
+                        }
+                    }
+
+                    var initializedFieldPresent =
+                        typeof readOwnDataProperty(bootstrap, "initialized") === "boolean"
+                        || typeof readOwnDataProperty(router, "initialized") === "boolean";
+
+                    sendDiagnostic({
+                        type: "routerBootstrapProbe",
+                        status: "observed",
+                        routerExists: routerExists,
+                        matchesIsArray: matchesIsArray,
+                        serializedMatchCount: matchesIsArray ? matches.length : null,
+                        initializedFieldPresent: initializedFieldPresent,
+                        matches: serializedMatches
+                    });
+                }
+
+                function pollRouterBootstrapState() {
+                    if (routerBootstrapProbeFinished) return;
+                    var bootstrap;
+                    try {
+                        bootstrap = window.$_TSR;
+                    } catch (ignored) {
+                        return;
+                    }
+                    if (bootstrap === null || typeof bootstrap === "undefined") return;
+
+                    routerBootstrapEverObserved = true;
+                    if (hasOwnDataProperty(bootstrap, "router")) {
+                        routerOwnDataPropertyEverObserved = true;
+                    }
+
+                    var router = readOwnDataProperty(bootstrap, "router");
+                    if (hasOwnDataProperty(router, "matches")) {
+                        matchesEverObserved = true;
+                    }
+
+                    var matches = readOwnDataProperty(router, "matches");
+                    if (Array.isArray(matches)) {
+                        matchesEverArray = true;
+                        captureRouterBootstrapState(bootstrap, router, matches);
+                    }
+                }
+
+                pollRouterBootstrapState();
+                if (!routerBootstrapProbeFinished) {
+                    routerBootstrapProbeInterval = window.setInterval(pollRouterBootstrapState, 15);
+                    routerBootstrapProbeTimeout = window.setTimeout(function() {
+                        if (routerBootstrapProbeFinished) return;
+                        stopRouterBootstrapProbe();
+                        if (!routerBootstrapEverObserved) {
+                            sendDiagnostic({
+                                type: "routerBootstrapProbe",
+                                status: "not-observed"
+                            });
+                        } else {
+                            sendDiagnostic({
+                                type: "routerBootstrapProbe",
+                                status: "observed-incomplete",
+                                routerOwnDataPropertyEverObserved: routerOwnDataPropertyEverObserved,
+                                matchesEverObserved: matchesEverObserved,
+                                matchesEverArray: matchesEverArray
+                            });
+                        }
+                    }, 5000);
+                }
+            }
+
             var parsePolyfilled = false;
             var canParsePolyfilled = false;
             if (window === window.top && typeof URL === "function") {
