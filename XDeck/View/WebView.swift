@@ -376,6 +376,8 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
             switch diagnostic["status"] as? String {
             case "bootstrap-observed":
                 WebViewDiagnostics.log("router hydration probe status=bootstrap-observed")
+            case "react-container-observed":
+                WebViewDiagnostics.log("router hydration probe status=react-container-observed")
             case "initialized":
                 WebViewDiagnostics.log("router hydration probe status=initialized")
             case "hydrated":
@@ -386,6 +388,7 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
                 WebViewDiagnostics.log(
                     "router hydration probe status=completion-not-observed "
                         + "bootstrapObserved=\(safeBoolean("bootstrapObserved")) "
+                        + "reactContainerMarkerObserved=\(safeBoolean("reactContainerMarkerObserved")) "
                         + "initializedPropertyObserved=\(safeBoolean("initializedPropertyObserved")) "
                         + "initializedTrueObserved=\(safeBoolean("initializedTrueObserved")) "
                         + "hydratedPropertyObserved=\(safeBoolean("hydratedPropertyObserved")) "

@@ -390,6 +390,7 @@ struct LoginView: View {
             if (window === window.top) {
                 var hydrationProbeFinished = false;
                 var bootstrapObserved = false;
+                var reactContainerMarkerObserved = false;
                 var initializedPropertyObserved = false;
                 var initializedTrueObserved = false;
                 var hydratedPropertyObserved = false;
@@ -411,6 +412,27 @@ struct LoginView: View {
 
                 function pollRouterHydrationState() {
                     if (hydrationProbeFinished) return;
+
+                    if (!reactContainerMarkerObserved) {
+                        try {
+                            var documentPropertyNames = Object.getOwnPropertyNames(document);
+                            for (var i = 0; i < documentPropertyNames.length; i++) {
+                                var propertyName = documentPropertyNames[i];
+                                if (propertyName.indexOf("__reactContainer$") !== 0) continue;
+
+                                var propertyDescriptor = Object.getOwnPropertyDescriptor(document, propertyName);
+                                if (propertyDescriptor
+                                    && Object.prototype.hasOwnProperty.call(propertyDescriptor, "value")) {
+                                    reactContainerMarkerObserved = true;
+                                    sendDiagnostic({
+                                        type: "routerHydrationProbe",
+                                        status: "react-container-observed"
+                                    });
+                                    break;
+                                }
+                            }
+                        } catch (ignored) {}
+                    }
 
                     var bootstrapDescriptor;
                     try {
@@ -492,6 +514,7 @@ struct LoginView: View {
                                 type: "routerHydrationProbe",
                                 status: "completion-not-observed",
                                 bootstrapObserved: bootstrapObserved,
+                                reactContainerMarkerObserved: reactContainerMarkerObserved,
                                 initializedPropertyObserved: initializedPropertyObserved,
                                 initializedTrueObserved: initializedTrueObserved,
                                 hydratedPropertyObserved: hydratedPropertyObserved,
