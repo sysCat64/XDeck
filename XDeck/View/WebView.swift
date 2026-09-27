@@ -551,6 +551,33 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
                     }
                 };
                 const entries = performance.getEntriesByType("resource");
+                const jetfuelStylesheets = Array.prototype.filter.call(
+                    document.querySelectorAll('link[rel~="stylesheet"]'), function (link) {
+                        try {
+                            const stylesheetURL = new URL(link.href, window.location.href);
+                            return stylesheetURL.pathname.indexOf("/use-jetfuel-dev-") !== -1;
+                        } catch (error) {
+                            return false;
+                        }
+                    });
+                const jetfuelStylesheet = jetfuelStylesheets.length > 0 ? jetfuelStylesheets[0] : null;
+                const matchingResources = [];
+                entries.forEach(function (entry) {
+                    try {
+                        const resourceURL = new URL(entry.name, window.location.href);
+                        if (resourceURL.protocol !== "http:" && resourceURL.protocol !== "https:") return;
+                        const pathname = resourceURL.pathname || "/";
+                        const lowerPathname = pathname.toLowerCase();
+                        if (lowerPathname.indexOf("jetfuel") !== -1
+                            || lowerPathname.indexOf("onboarding") !== -1
+                            || lowerPathname.indexOf("wrapper") !== -1) {
+                            matchingResources.push({
+                                initiatorType: String(entry.initiatorType || "<unknown>"),
+                                location: resourceURL.host + pathname
+                            });
+                        }
+                    } catch (error) {}
+                });
                 const resources = entries.map(function (entry) {
                     return {
                         initiatorType: String(entry.initiatorType || "<unknown>"),
@@ -582,6 +609,11 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
                 });
 
                 return {
+                    urlParseType: typeof URL.parse,
+                    urlCanParseType: typeof URL.canParse,
+                    jetfuelCSSLinkPresent: jetfuelStylesheet !== null,
+                    jetfuelCSSLoaded: jetfuelStylesheet ? jetfuelStylesheet.sheet !== null : null,
+                    matchingResources: matchingResources,
                     readyState: document.readyState,
                     elementCount: document.querySelectorAll("*").length,
                     bodyDescendantElementCount: body ? body.querySelectorAll("*").length : null,
@@ -636,6 +668,28 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
                     + "hasReactRoot=\(safeBoolean(diagnostics["hasReactRoot"])) "
                     + "bodyScrollWidth=\(safeNumber(diagnostics["bodyScrollWidth"])) "
                     + "bodyScrollHeight=\(safeNumber(diagnostics["bodyScrollHeight"]))")
+
+            let jetfuelCSSLinkPresent = safeBoolean(diagnostics["jetfuelCSSLinkPresent"])
+            let jetfuelCSSLoaded: String
+            if diagnostics["jetfuelCSSLinkPresent"] as? Bool == false {
+                jetfuelCSSLoaded = "<link-absent>"
+            } else {
+                jetfuelCSSLoaded = safeBoolean(diagnostics["jetfuelCSSLoaded"])
+            }
+            WebViewDiagnostics.log(
+                "snapshot elapsed=\(elapsedLabel) "
+                    + "URL.parse=\(safeText(diagnostics["urlParseType"])) "
+                    + "URL.canParse=\(safeText(diagnostics["urlCanParseType"])) "
+                    + "jetfuelCSSLinkPresent=\(jetfuelCSSLinkPresent) "
+                    + "jetfuelCSSLoaded=\(jetfuelCSSLoaded)")
+
+            let matchingResources = diagnostics["matchingResources"] as? [[String: Any]] ?? []
+            for resource in matchingResources {
+                WebViewDiagnostics.log(
+                    "matching resource elapsed=\(elapsedLabel) "
+                        + "initiatorType=\(safeText(resource["initiatorType"])) "
+                        + "location=\(safeText(resource["location"]))")
+            }
 
             let resources = diagnostics["resources"] as? [[String: Any]] ?? []
             for resource in resources {
