@@ -385,6 +385,92 @@ struct LoginView: View {
                 window.addEventListener("load", function() {
                     window.setTimeout(probeEntryModuleEvaluation, 3000);
                 }, true);
+
+                var routeModuleProbeStarted = false;
+                var routeModulePostImportStateReported = false;
+
+                function reportRouteModulePostImportState() {
+                    if (routeModulePostImportStateReported) return;
+                    routeModulePostImportStateReported = true;
+                    var body = document.body;
+                    var jetfuelElements = document.querySelectorAll('[class*="jf-element"]');
+                    var visibleJetfuelElementCount = 0;
+                    Array.prototype.forEach.call(jetfuelElements, function(element) {
+                        try {
+                            var rect = element.getBoundingClientRect();
+                            var style = window.getComputedStyle(element);
+                            if (rect.width > 0 && rect.height > 0
+                                && style.display !== "none"
+                                && style.visibility !== "hidden"
+                                && Number(style.opacity) > 0) {
+                                visibleJetfuelElementCount += 1;
+                            }
+                        } catch (ignored) {}
+                    });
+                    var jetfuelStylesheetPresent = false;
+                    Array.prototype.forEach.call(
+                        document.querySelectorAll('link[rel~="stylesheet"]'), function(link) {
+                            try {
+                                var stylesheetURL = new URL(link.href, document.baseURI);
+                                if (stylesheetURL.pathname.toLowerCase().indexOf("use-jetfuel-dev-") !== -1) {
+                                    jetfuelStylesheetPresent = true;
+                                }
+                            } catch (ignored) {}
+                        });
+                    sendDiagnostic({
+                        type: "routeModulePostImportState",
+                        elementCount: document.querySelectorAll("*").length,
+                        bodyDescendantElementCount: body ? body.querySelectorAll("*").length : null,
+                        jetfuelElementCount: jetfuelElements.length,
+                        visibleJetfuelElementCount: visibleJetfuelElementCount,
+                        pageVisible: visibleJetfuelElementCount > 0,
+                        jetfuelStylesheetPresent: jetfuelStylesheetPresent,
+                        hasLayers: document.querySelector("#layers") !== null
+                    });
+                }
+
+                function reportRouteModuleProbeResult(payload) {
+                    sendDiagnostic(payload);
+                    window.setTimeout(reportRouteModulePostImportState, 250);
+                }
+
+                function isExplicitModuleNetworkFailure(name, message) {
+                    var description = (name + " " + message).toLowerCase();
+                    return /importing a module script failed|failed to fetch dynamically imported module|failed to load module script|networkerror|network error|load failed|\b404\b|not found|timed out|timeout/.test(description);
+                }
+
+                function probeRouteModuleEvaluation() {
+                    if (routeModuleProbeStarted) return;
+                    routeModuleProbeStarted = true;
+                    var routeModuleURL = "https://abs.twimg.com/x-web/x-web/assets/web-D93GVrdd.js";
+                    var routeModuleLocation = safeLocation(routeModuleURL);
+                    import(routeModuleURL).then(function() {
+                        reportRouteModuleProbeResult({
+                            type: "routeModuleEvaluationProbe",
+                            status: "resolved",
+                            location: routeModuleLocation
+                        });
+                    }, function(error) {
+                        var name = "<unknown>";
+                        var message = "<unavailable>";
+                        try {
+                            if (error && typeof error.name === "string") name = error.name;
+                            if (error && typeof error.message === "string") message = error.message;
+                        } catch (ignored) {}
+                        reportRouteModuleProbeResult({
+                            type: "routeModuleEvaluationProbe",
+                            status: "rejected",
+                            location: routeModuleLocation,
+                            name: safeText(name),
+                            message: safeText(message),
+                            failureKind: isExplicitModuleNetworkFailure(name, message) ? "network-failure" : "module-rejection"
+                        });
+                    });
+                }
+
+                window.addEventListener("load", function() {
+                    window.setTimeout(probeRouteModuleEvaluation, 3000);
+                }, true);
             }
 
             window.addEventListener("unhandledrejection", function(event) {

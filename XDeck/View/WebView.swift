@@ -251,6 +251,11 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
             return value.stringValue
         }
 
+        func safeBoolean(_ key: String) -> String {
+            guard let value = diagnostic[key] as? Bool else { return "<unavailable>" }
+            return value ? "true" : "false"
+        }
+
         switch diagnostic["type"] as? String {
         case "javascriptError":
             WebViewDiagnostics.log(
@@ -294,6 +299,33 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
             default:
                 break
             }
+        case "routeModuleEvaluationProbe":
+            let location = safeString("location")
+            switch diagnostic["status"] as? String {
+            case "resolved":
+                WebViewDiagnostics.log(
+                    "route module evaluation probe status=resolved location=\(location)")
+            case "rejected":
+                let failureKind = diagnostic["failureKind"] as? String
+                let classification = failureKind == "network-failure"
+                    ? " failureKind=network-failure" : ""
+                WebViewDiagnostics.log(
+                    "route module evaluation probe status=rejected location=\(location) "
+                        + "name=\(safeString("name")) message=\(safeString("message"))"
+                        + classification)
+            default:
+                break
+            }
+        case "routeModulePostImportState":
+            WebViewDiagnostics.log(
+                "route module post-import visibility "
+                    + "pageVisible=\(safeBoolean("pageVisible")) "
+                    + "elementCount=\(safeNumber("elementCount")) "
+                    + "bodyDescendantElementCount=\(safeNumber("bodyDescendantElementCount")) "
+                    + "jetfuelElementCount=\(safeNumber("jetfuelElementCount")) "
+                    + "visibleJetfuelElementCount=\(safeNumber("visibleJetfuelElementCount")) "
+                    + "jetfuelStylesheetPresent=\(safeBoolean("jetfuelStylesheetPresent")) "
+                    + "hasLayers=\(safeBoolean("hasLayers"))")
         default:
             break
         }
