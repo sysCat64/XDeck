@@ -641,9 +641,29 @@ struct LoginView: View {
                     }
 
                     import(entryModule.src).then(function() {
+                        var reactContainerMarkerPresent = false;
+                        try {
+                            var propertyNames = Object.getOwnPropertyNames(document);
+                            for (var index = 0; index < propertyNames.length; index += 1) {
+                                var propertyName = propertyNames[index];
+                                if (propertyName.indexOf("__reactContainer$") !== 0) continue;
+
+                                var descriptor = Object.getOwnPropertyDescriptor(document, propertyName);
+                                if (descriptor
+                                    && Object.prototype.hasOwnProperty.call(descriptor, "value")) {
+                                    reactContainerMarkerPresent = true;
+                                    break;
+                                }
+                            }
+                        } catch (ignored) {}
+
                         sendDiagnostic({
                             type: "moduleEvaluationProbe",
-                            status: "resolved"
+                            status: "resolved",
+                            location: safeLocation(entryModule.src),
+                            reactContainerMarkerPresent: reactContainerMarkerPresent,
+                            readyState: safeText(document.readyState),
+                            windowIsTop: window === window.top
                         });
                     }, function(error) {
                         var name = "<unknown>";
@@ -711,7 +731,6 @@ struct LoginView: View {
                 function reportRouteModuleProbeResult(payload) {
                     sendDiagnostic(payload);
                     window.setTimeout(reportRouteModulePostImportState, 250);
-                    window.setTimeout(probeRouteLazyLoader, 1000);
                 }
 
                 function isExplicitModuleNetworkFailure(name, message) {
@@ -747,10 +766,6 @@ struct LoginView: View {
                         });
                     });
                 }
-
-                window.addEventListener("load", function() {
-                    window.setTimeout(probeRouteModuleEvaluation, 3000);
-                }, true);
 
                 var routeLazyLoaderProbeStarted = false;
 

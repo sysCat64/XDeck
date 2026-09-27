@@ -288,7 +288,11 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
         case "moduleEvaluationProbe":
             switch diagnostic["status"] as? String {
             case "resolved":
-                WebViewDiagnostics.log("module evaluation probe status=resolved")
+                WebViewDiagnostics.log(
+                    "module evaluation probe status=resolved location=\(safeString("location")) "
+                        + "reactContainerMarkerPresent=\(safeBoolean("reactContainerMarkerPresent")) "
+                        + "document.readyState=\(safeString("readyState")) "
+                        + "windowIsTop=\(safeBoolean("windowIsTop"))")
             case "rejected":
                 WebViewDiagnostics.log(
                     "module evaluation probe status=rejected\n"
