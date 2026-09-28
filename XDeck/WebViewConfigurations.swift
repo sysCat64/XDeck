@@ -320,6 +320,41 @@ struct WebViewConfigurations {
                     parentChildCount: regionParent ? regionParent.children.length : 0,
                     parentChildren: regionParent ? Array.from(regionParent.children).slice(0, 12).map(sibling) : []
                 } : null;
+                // Positioning of the login dialog and its direct parent. getPropertyValue returns ""
+                // for properties this WebKit does not know, so unsupported ones stay visible as "".
+                const positioningProperties = [
+                    "position", "top", "right", "bottom", "left", "inset",
+                    "inset-inline-start", "inset-inline-end", "inset-block-start", "inset-block-end",
+                    "margin-top", "margin-bottom", "translate", "rotate", "scale",
+                    "transform", "transform-origin", "z-index"
+                ];
+                const positioning = (element) => {
+                    const style = getComputedStyle(element);
+                    const computed = {};
+                    positioningProperties.forEach((name) => { computed[name] = style.getPropertyValue(name); });
+                    return {
+                        tag: element.tagName.toLowerCase(),
+                        role: element.getAttribute("role"),
+                        rect: rect(element),
+                        offsetWidth: element.offsetWidth, offsetHeight: element.offsetHeight,
+                        clientWidth: element.clientWidth, clientHeight: element.clientHeight,
+                        computed: computed
+                    };
+                };
+                const supports = (property, value) => {
+                    try { return CSS.supports(property, value); } catch (error) { return "error"; }
+                };
+                const dialog = target.closest('[role="dialog"]');
+                const dialogPositioning = dialog ? {
+                    aria: (dialog.getAttribute("aria-label") || "").slice(0, 40) || null,
+                    dialog: Object.assign(positioning(dialog), { inlineStyle: (dialog.style.cssText || "").slice(0, 500) }),
+                    parent: dialog.parentElement ? positioning(dialog.parentElement) : null,
+                    cssSupports: {
+                        translate: supports("translate", "-50% -50%"),
+                        inset: supports("inset", "0"),
+                        insetInlineStart: supports("inset-inline-start", "0")
+                    }
+                } : null;
                 const found = controls();
                 const summarize = (element) => ({
                     tag: element.tagName.toLowerCase(),
@@ -363,6 +398,7 @@ struct WebViewConfigurations {
                     target: Object.assign(describe(target), { kind: target.tagName.toLowerCase() === "input" ? "input" : "button" }),
                     widthSteps: widthSteps,
                     narrowRegion: narrowRegion,
+                    dialogPositioning: dialogPositioning,
                     ancestors: ancestors
                 }));
             };
