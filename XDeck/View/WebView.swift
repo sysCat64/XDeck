@@ -124,6 +124,7 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
     var lastUrl: URL
     var refreshSwitch: Bool
     var lastHandledScriptToken: Int
+    private var didRunTLADuplicateImportProbe = false
 
     init(owner: WebView) {
         self.owner = owner
@@ -165,6 +166,7 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
         logPageDiagnostics(for: webView)
         scheduleResourceSnapshots(for: webView)
         scheduleNativePageWorldProbe(for: webView)
+        runTLADuplicateImportProbeOnce(for: webView)
     }
 
     func webView(
@@ -650,6 +652,204 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
                 self.logResourceSnapshot(for: webView, elapsedLabel: elapsedLabel)
             }
         }
+    }
+
+    private func runTLADuplicateImportProbeOnce(for webView: WKWebView) {
+        guard !didRunTLADuplicateImportProbe, isLoginFlowURL(webView.url) else { return }
+        didRunTLADuplicateImportProbe = true
+
+        let functionBody = #"""
+            const importerDocument = document;
+            let helperURL = null;
+            let testURL = null;
+            let startedObserved = false;
+            let timedOut = false;
+            let blobModuleRejected = false;
+            let stopped = false;
+            const completionOrder = [];
+            const observations = Object.create(null);
+            const notObserved = "<not-observed>";
+
+            function safeErrorName(error) {
+                try {
+                    return error && typeof error.name === "string" ? error.name : "<unknown>";
+                } catch (ignored) {
+                    return "<unknown>";
+                }
+            }
+
+            function makeResult(status) {
+                function observationValue(label, key, fallback) {
+                    const observation = observations[label];
+                    return observation ? observation[key] : fallback;
+                }
+                return {
+                    status: status,
+                    startedObserved: startedObserved,
+                    completionOrder: completionOrder.join(","),
+                    firstTailRanAtFulfill: observationValue("first", "tailRanAtFulfill", notObserved),
+                    firstSameDocument: observationValue("first", "sameDocument", notObserved),
+                    firstTailSentinelReadable: observationValue("first", "tailSentinelReadable", notObserved),
+                    firstTailSentinelErrorName: observationValue("first", "tailSentinelErrorName", notObserved),
+                    secondTailRanAtFulfill: observationValue("second", "tailRanAtFulfill", notObserved),
+                    secondSameDocument: observationValue("second", "sameDocument", notObserved),
+                    secondTailSentinelReadable: observationValue("second", "tailSentinelReadable", notObserved),
+                    secondTailSentinelErrorName: observationValue("second", "tailSentinelErrorName", notObserved),
+                    timedOut: timedOut,
+                    blobModuleRejected: blobModuleRejected
+                };
+            }
+
+            function observeImport(label, importPromise, state) {
+                return importPromise.then(function(moduleNamespace) {
+                    if (stopped) return;
+
+                    const tailRanAtFulfill = state.tailRan;
+                    completionOrder.push(label);
+                    let sameDocument = "<not-callable>";
+                    if (typeof moduleNamespace.sameDocument === "function") {
+                        try {
+                            sameDocument = Boolean(moduleNamespace.sameDocument(importerDocument));
+                        } catch (error) {
+                            sameDocument = "<error:" + safeErrorName(error) + ">";
+                        }
+                    }
+
+                    let tailSentinelReadable = false;
+                    let tailSentinelErrorName = "<none>";
+                    try {
+                        void moduleNamespace.tailSentinel;
+                        tailSentinelReadable = true;
+                    } catch (error) {
+                        tailSentinelErrorName = safeErrorName(error);
+                    }
+
+                    observations[label] = {
+                        tailRanAtFulfill: tailRanAtFulfill,
+                        sameDocument: sameDocument,
+                        tailSentinelReadable: tailSentinelReadable,
+                        tailSentinelErrorName: tailSentinelErrorName
+                    };
+                }, function() {
+                    if (!stopped) blobModuleRejected = true;
+                });
+            }
+
+            async function runProbe() {
+                try {
+                    helperURL = URL.createObjectURL(new Blob([
+                        "export const state = { started: false, tailRan: false };"
+                    ], { type: "text/javascript" }));
+
+                    const testSource =
+                        "import { state } from " + JSON.stringify(helperURL) + ";\n" +
+                        "const moduleDocument = document;\n" +
+                        "export const sameDocument = candidate => candidate === moduleDocument;\n" +
+                        "state.started = true;\n" +
+                        "await new Promise(resolve => setTimeout(resolve, 100));\n" +
+                        "state.tailRan = true;\n" +
+                        "export const tailSentinel = 1;\n";
+                    testURL = URL.createObjectURL(new Blob([testSource], { type: "text/javascript" }));
+
+                    const helperModule = await import(helperURL);
+                    const state = helperModule.state;
+                    const firstCompletion = observeImport("first", import(testURL), state);
+                    const startDeadline = Date.now() + 750;
+                    while (!state.started && !blobModuleRejected && !stopped && Date.now() < startDeadline) {
+                        await new Promise(resolve => setTimeout(resolve, 5));
+                    }
+
+                    if (stopped) return makeResult("timeout");
+                    if (blobModuleRejected) return makeResult("blocked");
+                    if (!state.started) {
+                        timedOut = true;
+                        return makeResult("timeout");
+                    }
+
+                    startedObserved = true;
+                    const secondCompletion = observeImport("second", import(testURL), state);
+                    await Promise.all([firstCompletion, secondCompletion]);
+                    return makeResult(blobModuleRejected ? "blocked" : "completed");
+                } catch (ignored) {
+                    blobModuleRejected = true;
+                    return makeResult("blocked");
+                }
+            }
+
+            let overallTimer = null;
+            const overallTimeout = new Promise(resolve => {
+                overallTimer = setTimeout(function() {
+                    timedOut = true;
+                    resolve(makeResult("timeout"));
+                }, 2500);
+            });
+
+            let result;
+            try {
+                result = await Promise.race([runProbe(), overallTimeout]);
+            } finally {
+                stopped = true;
+                if (overallTimer !== null) clearTimeout(overallTimer);
+                if (testURL !== null) URL.revokeObjectURL(testURL);
+                if (helperURL !== null) URL.revokeObjectURL(helperURL);
+            }
+            return result;
+            """#
+
+        webView.callAsyncJavaScript(
+            functionBody,
+            arguments: [:],
+            in: nil,
+            in: WKContentWorld.page) { result in
+                switch result {
+                case .success(let value):
+                    guard let diagnostics = value as? [String: Any] else {
+                        WebViewDiagnostics.log(
+                            "tla duplicate-import probe status=invalid-result "
+                                + "startedObserved=<not-observed> completionOrder=<not-observed> "
+                                + "firstTailRanAtFulfill=<not-observed> firstSameDocument=<not-observed> "
+                                + "firstTailSentinelReadable=<not-observed> firstTailSentinelErrorName=<not-observed> "
+                                + "secondTailRanAtFulfill=<not-observed> secondSameDocument=<not-observed> "
+                                + "secondTailSentinelReadable=<not-observed> secondTailSentinelErrorName=<not-observed> "
+                                + "timedOut=false blobModuleRejected=false")
+                        return
+                    }
+
+                    func diagnosticValue(_ key: String) -> String {
+                        if let value = diagnostics[key] as? String {
+                            return String(WebViewDiagnostics.sanitized(value).prefix(80))
+                        }
+                        if let value = diagnostics[key] as? Bool {
+                            return value ? "true" : "false"
+                        }
+                        return "<not-observed>"
+                    }
+
+                    WebViewDiagnostics.log(
+                        "tla duplicate-import probe status=\(diagnosticValue("status")) "
+                            + "startedObserved=\(diagnosticValue("startedObserved")) "
+                            + "completionOrder=\(diagnosticValue("completionOrder")) "
+                            + "firstTailRanAtFulfill=\(diagnosticValue("firstTailRanAtFulfill")) "
+                            + "firstSameDocument=\(diagnosticValue("firstSameDocument")) "
+                            + "firstTailSentinelReadable=\(diagnosticValue("firstTailSentinelReadable")) "
+                            + "firstTailSentinelErrorName=\(diagnosticValue("firstTailSentinelErrorName")) "
+                            + "secondTailRanAtFulfill=\(diagnosticValue("secondTailRanAtFulfill")) "
+                            + "secondSameDocument=\(diagnosticValue("secondSameDocument")) "
+                            + "secondTailSentinelReadable=\(diagnosticValue("secondTailSentinelReadable")) "
+                            + "secondTailSentinelErrorName=\(diagnosticValue("secondTailSentinelErrorName")) "
+                            + "timedOut=\(diagnosticValue("timedOut")) "
+                            + "blobModuleRejected=\(diagnosticValue("blobModuleRejected"))")
+                case .failure:
+                    WebViewDiagnostics.log(
+                        "tla duplicate-import probe status=native-evaluation-failed "
+                            + "startedObserved=false completionOrder=<not-observed> "
+                            + "firstTailRanAtFulfill=<not-observed> firstSameDocument=<not-observed> "
+                            + "firstTailSentinelReadable=<not-observed> firstTailSentinelErrorName=<not-observed> "
+                            + "secondTailRanAtFulfill=<not-observed> secondSameDocument=<not-observed> "
+                            + "secondTailSentinelReadable=<not-observed> secondTailSentinelErrorName=<not-observed> "
+                            + "timedOut=false blobModuleRejected=false")
+                }
+            }
     }
 
     private func scheduleNativePageWorldProbe(for webView: WKWebView) {
