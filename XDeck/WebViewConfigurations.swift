@@ -187,7 +187,7 @@ struct WebViewConfigurations {
 
     private static let clickForYouTab: String = """
         \(startupTimingMarker("tabWaitRegistered:index=0"))
-        waitForElement("a[href='/home'][role='tab']", 0, (element) => {
+        waitForElement("div[role='tab']", 0, (element) => {
             \(startupTimingMarker("tabClick"))
             element.click();
         });
@@ -195,7 +195,7 @@ struct WebViewConfigurations {
 
     private static let clickFollowingTab: String = """
         \(startupTimingMarker("tabWaitRegistered:index=1"))
-        waitForElement("a[href='/home'][role='tab']", 1, (element) => {
+        waitForElement("div[role='tab']", 1, (element) => {
             \(startupTimingMarker("tabClick"))
             element.click();
         });
