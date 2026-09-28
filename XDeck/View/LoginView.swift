@@ -26,8 +26,36 @@ struct LoginView: View {
             injectionTime: .atDocumentStart,
             forMainFrameOnly: true)
         configuration.userContentController.addUserScript(script)
+        let toSortedShim = WKUserScript(
+            source: Self.toSortedShimScript,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true)
+        configuration.userContentController.addUserScript(toSortedShim)
         return configuration
     }
+
+    // The only compatibility shim in this diagnostic run: X's locale module calls
+    // Array.prototype.toSorted at module top level, and this WKWebView does not provide it.
+    private static let toSortedShimScript = #"""
+        (function () {
+            if (typeof Array.prototype.toSorted === "function") return;
+            Object.defineProperty(Array.prototype, "toSorted", {
+                value: function toSorted(comparefn) {
+                    if (comparefn !== undefined && typeof comparefn !== "function") {
+                        throw new TypeError("The comparison function must be either a function or undefined");
+                    }
+                    var source = Object(this);
+                    var length = Math.min(Math.max(Math.trunc(Number(source.length)) || 0, 0), Number.MAX_SAFE_INTEGER);
+                    var copy = new Array(length);
+                    for (var index = 0; index < length; index += 1) copy[index] = source[index];
+                    return copy.sort(comparefn);
+                },
+                writable: true,
+                enumerable: false,
+                configurable: true
+            });
+        })();
+        """#
 
     private static let runtimeDiagnosticsScript = #"""
         (function() {
