@@ -207,6 +207,10 @@ struct WebViewConfigurations {
     // the same classes on role="dialog". The <style> goes into <head>, where React hydration skips it.
     private static let loginDialogCompatibility: String = #"""
         (function () {
+            // Range media queries are what WebKit 613 cannot parse; it treats "(width >= 0px)" as
+            // non-matching, while any engine that supports them matches it for every viewport. Skip
+            // the fallback there so this frozen copy never overrides X's native responsive rules.
+            if (window.matchMedia("(width >= 0px)").matches) return;
             const css = String.raw`
                 @media (min-width: 517px) {
                     [role="dialog"].narrow\:inset-0 { inset: 0; }
