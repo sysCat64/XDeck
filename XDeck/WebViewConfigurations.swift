@@ -13,6 +13,7 @@ struct WebViewConfigurations {
         case hideAds
         case detectMediaOverlay(columnIndex: Int)
         case loginLayoutDiagnostic
+        case loginResponsiveInventory
 
         var scriptContent: String {
             switch self {
@@ -26,6 +27,7 @@ struct WebViewConfigurations {
             case .hideAds: return WebViewConfigurations.hideAds
             case .detectMediaOverlay(let columnIndex): return WebViewConfigurations.detectMediaOverlay(columnIndex: columnIndex)
             case .loginLayoutDiagnostic: return WebViewConfigurations.loginLayoutDiagnostic
+            case .loginResponsiveInventory: return WebViewConfigurations.loginResponsiveInventory
             }
         }
 
@@ -33,7 +35,7 @@ struct WebViewConfigurations {
             switch self {
             case .findUserName, .findThemeColor, .clickForYouTab, .clickFollowingTab, .hideSideHeader, .hidePostArea, .hideAds:
                 return true
-            case .global, .detectMediaOverlay, .loginLayoutDiagnostic:
+            case .global, .detectMediaOverlay, .loginLayoutDiagnostic, .loginResponsiveInventory:
                 return false
             }
         }
@@ -432,6 +434,132 @@ struct WebViewConfigurations {
                 });
             };
             waitForControl();
+        })();
+        """
+
+    // Temporary login responsive-class inventory. Read-only: whenever the onboarding UI shows a
+    // meaningful control and its set of responsive utility classes changes (for example on the next
+    // login step), it reports those classes with element summaries and the step context. It never
+    // reads input values, and stops after 40 reports.
+    private static let loginResponsiveInventory: String = """
+        (function () {
+            const post = (payload) => {
+                webkit.messageHandlers.\(Self.loginLayoutDiagnosticHandlerName).postMessage(JSON.stringify(payload));
+            };
+            const round = (value) => Math.round(value * 100) / 100;
+            // Variant prefixes ("narrow:", "max-md:", "@min-[200px]:") of a class token, bracket-aware.
+            const variantsOf = (token) => {
+                const parts = [];
+                let depth = 0, current = "";
+                for (const character of token) {
+                    if (character === "[") depth += 1;
+                    if (character === "]") depth -= 1;
+                    if (character === ":" && depth === 0) { parts.push(current); current = ""; } else { current += character; }
+                }
+                return parts;
+            };
+            const isResponsiveVariant = (variant) =>
+                /^(max-)?(narrow|sm|md|lg|xl|2xl|wide)$/.test(variant) || /^(min|max)-\\[/.test(variant) || variant.startsWith("@");
+            const summary = (element) => ({
+                tag: element.tagName.toLowerCase(),
+                role: element.getAttribute("role"),
+                testid: element.getAttribute("data-testid"),
+                aria: (element.getAttribute("aria-label") || "").slice(0, 40) || null,
+                jetfuel: element.classList.contains("jf-element")
+            });
+            const containerOf = (element) => {
+                for (let node = element.parentElement; node; node = node.parentElement) {
+                    const name = Array.from(node.classList).find((token) => token === "@container" || token.startsWith("@container/"));
+                    if (name) {
+                        const r = node.getBoundingClientRect();
+                        return { name: name, width: round(r.width), height: round(r.height) };
+                    }
+                }
+                return null;
+            };
+            const isVisible = (element) => {
+                const r = element.getBoundingClientRect();
+                if (r.width < 100 || r.height < 20) return false;
+                if (r.right <= 0 || r.bottom <= 0 || r.left >= window.innerWidth || r.top >= window.innerHeight) return false;
+                const style = getComputedStyle(element);
+                return style.display !== "none" && style.visibility !== "hidden";
+            };
+            const hasMeaningfulControl = () =>
+                Array.from(document.querySelectorAll('input:not([type="hidden"])')).some(isVisible)
+                || Array.from(document.querySelectorAll('button, [role="button"]'))
+                    .some((element) => isVisible(element) && (element.innerText || "").trim().length > 0);
+            // Step context without input values: path, dialog label, visible headings, input kinds.
+            const stepContext = () => {
+                const dialog = document.querySelector('[role="dialog"]');
+                const headings = Array.from(document.querySelectorAll('h1, h2, [role="heading"]'))
+                    .filter((element) => element.getBoundingClientRect().height > 0)
+                    .map((element) => (element.innerText || "").trim().slice(0, 80))
+                    .filter((text) => text.length > 0)
+                    .slice(0, 5);
+                const inputs = Array.from(document.querySelectorAll('input:not([type="hidden"])'))
+                    .filter((element) => element.getBoundingClientRect().height > 0)
+                    .map((element) => ({
+                        type: element.getAttribute("type"),
+                        name: element.getAttribute("name"),
+                        autocomplete: element.getAttribute("autocomplete")
+                    }))
+                    .slice(0, 6);
+                return {
+                    path: location.pathname,
+                    dialogAria: dialog ? (dialog.getAttribute("aria-label") || "").slice(0, 60) : null,
+                    headings: headings,
+                    inputs: inputs
+                };
+            };
+            const inventory = () => {
+                const tokens = new Map();
+                for (const element of document.body.querySelectorAll("[class]")) {
+                    for (const token of (element.getAttribute("class") || "").split(/\\s+/)) {
+                        if (!token || !variantsOf(token).some(isResponsiveVariant)) continue;
+                        const entry = tokens.get(token) || { count: 0, elements: [], containers: [] };
+                        entry.count += 1;
+                        if (entry.elements.length < 3) entry.elements.push(summary(element));
+                        if (token.startsWith("@") && entry.containers.length < 2) {
+                            const container = containerOf(element);
+                            if (container) entry.containers.push(container);
+                        }
+                        tokens.set(token, entry);
+                    }
+                }
+                return tokens;
+            };
+            let lastSignature = null;
+            let reports = 0;
+            let scheduled = false;
+            let observer = null;
+            const capture = () => {
+                scheduled = false;
+                if (!document.body || !hasMeaningfulControl()) return;
+                const tokens = inventory();
+                const step = stepContext();
+                const signature = [step.path, step.dialogAria, step.headings.join("/"),
+                    Array.from(tokens.entries()).map(([token, entry]) => token + "=" + entry.count).sort().join(",")].join("|");
+                if (signature === lastSignature) return;
+                lastSignature = signature;
+                reports += 1;
+                post({
+                    kind: "responsiveInventory",
+                    report: reports,
+                    viewport: { innerWidth: window.innerWidth, innerHeight: window.innerHeight },
+                    step: step,
+                    tokenCount: tokens.size,
+                    tokens: Object.fromEntries(tokens)
+                });
+                if (reports >= 40 && observer) observer.disconnect();
+            };
+            const schedule = () => {
+                if (scheduled) return;
+                scheduled = true;
+                requestAnimationFrame(capture);
+            };
+            observer = new MutationObserver(schedule);
+            observer.observe(document, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
+            schedule();
         })();
         """
 
