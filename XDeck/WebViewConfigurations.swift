@@ -12,6 +12,7 @@ struct WebViewConfigurations {
         case hideSideHeader
         case hideAds
         case detectMediaOverlay(columnIndex: Int)
+        case loginLayoutDiagnostic
 
         var scriptContent: String {
             switch self {
@@ -24,6 +25,7 @@ struct WebViewConfigurations {
             case .hideSideHeader: return WebViewConfigurations.hideSideHeader
             case .hideAds: return WebViewConfigurations.hideAds
             case .detectMediaOverlay(let columnIndex): return WebViewConfigurations.detectMediaOverlay(columnIndex: columnIndex)
+            case .loginLayoutDiagnostic: return WebViewConfigurations.loginLayoutDiagnostic
             }
         }
 
@@ -31,13 +33,15 @@ struct WebViewConfigurations {
             switch self {
             case .findUserName, .findThemeColor, .clickForYouTab, .clickFollowingTab, .hideSideHeader, .hidePostArea, .hideAds:
                 return true
-            case .global, .detectMediaOverlay:
+            case .global, .detectMediaOverlay, .loginLayoutDiagnostic:
                 return false
             }
         }
     }
 
     static let handlerName = "handler";
+    // Temporary login-layout diagnostic: a separate handler so it never reaches normal XDeck messaging.
+    static let loginLayoutDiagnosticHandlerName = "xdeckLoginLayoutDiagnostic"
 
     static func makeConfiguration(onLoadScripts: [OnLoadScript]) -> WKWebViewConfiguration {
         let script = [
@@ -194,6 +198,115 @@ struct WebViewConfigurations {
         waitForElement("\(homeTimelineTabSelector)", 1, (element) => {
             element.click();
         });
+        """
+
+    // Temporary login-layout diagnostic. Read-only: waits until a visible login control exists,
+    // lets layout settle for two animation frames, then reports viewport, document and
+    // ancestor-chain geometry once through its own message handler.
+    private static let loginLayoutDiagnostic: String = """
+        (function () {
+            const rect = (element) => {
+                const r = element.getBoundingClientRect();
+                return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) };
+            };
+            const isVisible = (element) => {
+                const r = element.getBoundingClientRect();
+                return r.width > 0 && r.height > 0;
+            };
+            const describe = (element) => {
+                const style = getComputedStyle(element);
+                return {
+                    tag: element.tagName.toLowerCase(),
+                    role: element.getAttribute("role"),
+                    testid: element.getAttribute("data-testid"),
+                    aria: (element.getAttribute("aria-label") || "").slice(0, 40) || null,
+                    rect: rect(element),
+                    style: {
+                        display: style.display, position: style.position,
+                        width: style.width, maxWidth: style.maxWidth,
+                        marginLeft: style.marginLeft, marginRight: style.marginRight,
+                        justifyContent: style.justifyContent, alignItems: style.alignItems,
+                        transform: style.transform
+                    }
+                };
+            };
+            // Visible login controls: text inputs first, otherwise buttons. Input values are never read.
+            const controls = () => {
+                const inputs = Array.from(document.querySelectorAll('input:not([type="hidden"])')).filter(isVisible);
+                const buttons = Array.from(document.querySelectorAll('button, [role="button"]')).filter(isVisible);
+                return { inputs: inputs, buttons: buttons };
+            };
+            const findTarget = () => {
+                const found = controls();
+                return found.inputs[0] || found.buttons[0] || null;
+            };
+            const report = () => {
+                const target = findTarget();
+                if (!target) return;
+                const ancestors = [];
+                for (let element = target.parentElement, depth = 0;
+                     element && element !== document.documentElement && depth < 8;
+                     element = element.parentElement, depth += 1) {
+                    ancestors.push(describe(element));
+                }
+                const found = controls();
+                const summarize = (element) => ({
+                    tag: element.tagName.toLowerCase(),
+                    type: element.getAttribute("type"),
+                    text: (element.innerText || "").trim().slice(0, 30),
+                    rect: rect(element)
+                });
+                const viewport = window.visualViewport;
+                const main = document.querySelector("main");
+                const metaViewport = document.querySelector('meta[name="viewport"]');
+                webkit.messageHandlers.\(Self.loginLayoutDiagnosticHandlerName).postMessage(JSON.stringify({
+                    path: location.pathname,
+                    viewport: {
+                        innerWidth: window.innerWidth, innerHeight: window.innerHeight,
+                        outerWidth: window.outerWidth, outerHeight: window.outerHeight,
+                        devicePixelRatio: window.devicePixelRatio,
+                        screenWidth: screen.width, screenHeight: screen.height,
+                        visualViewport: viewport ? {
+                            width: viewport.width, height: viewport.height,
+                            offsetLeft: viewport.offsetLeft, offsetTop: viewport.offsetTop,
+                            scale: viewport.scale
+                        } : null,
+                        metaViewport: metaViewport ? metaViewport.getAttribute("content") : null
+                    },
+                    document: {
+                        clientWidth: document.documentElement.clientWidth, clientHeight: document.documentElement.clientHeight,
+                        scrollWidth: document.documentElement.scrollWidth, scrollHeight: document.documentElement.scrollHeight,
+                        bodyClientWidth: document.body.clientWidth, bodyClientHeight: document.body.clientHeight,
+                        bodyScrollWidth: document.body.scrollWidth, bodyScrollHeight: document.body.scrollHeight
+                    },
+                    rects: {
+                        documentElement: rect(document.documentElement),
+                        body: rect(document.body),
+                        main: main ? rect(main) : null
+                    },
+                    controls: {
+                        inputCount: found.inputs.length,
+                        buttonCount: found.buttons.length,
+                        firstControls: found.inputs.concat(found.buttons).slice(0, 6).map(summarize)
+                    },
+                    target: describe(target),
+                    ancestors: ancestors
+                }));
+            };
+            const settleThenReport = () => {
+                requestAnimationFrame(() => requestAnimationFrame(report));
+            };
+            if (findTarget()) {
+                settleThenReport();
+                return;
+            }
+            const observer = new MutationObserver(() => {
+                if (!findTarget()) return;
+                observer.disconnect();
+                settleThenReport();
+            });
+            observer.observe(document, { childList: true, subtree: true });
+        })();
         """
 
     private static func wrapOnLoad(contents: [String]) -> String {

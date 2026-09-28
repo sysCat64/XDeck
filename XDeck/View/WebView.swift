@@ -70,6 +70,12 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
         self.lastHandledScriptToken = owner.scriptExecutionToken
         super.init()
         owner.configuration?.userContentController.add(self, name: WebViewConfigurations.handlerName)
+        // Temporary login-layout diagnostic: register its handler only where its script is injected.
+        let diagnosticHandlerName = WebViewConfigurations.loginLayoutDiagnosticHandlerName
+        if let userContentController = owner.configuration?.userContentController,
+           userContentController.userScripts.contains(where: { $0.source.contains(diagnosticHandlerName) }) {
+            userContentController.add(self, name: diagnosticHandlerName)
+        }
     }
 
     // MARK: WKNavigationDelegate
@@ -110,8 +116,28 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
 
     // MARK: WKScriptMessageHandler
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        if message.name == WebViewConfigurations.loginLayoutDiagnosticHandlerName {
+            logLoginLayoutDiagnostic(message)
+            return
+        }
         guard message.name == WebViewConfigurations.handlerName else { return }
         print("[WKScriptMessage] \(message.body)")
         owner.messageFromWebView = message.body as? String
+    }
+
+    // Temporary login-layout diagnostic: native geometry of the web view, then the page's report.
+    private func logLoginLayoutDiagnostic(_ message: WKScriptMessage) {
+        if let webView = message.webView {
+            let window = webView.window
+            print("[LoginLayoutDiagnostic] native"
+                + " frame=\(webView.frame)"
+                + " bounds=\(webView.bounds)"
+                + " superviewBounds=\(webView.superview.map { "\($0.bounds)" } ?? "nil")"
+                + " windowContentSize=\(window?.contentView.map { "\($0.bounds.size)" } ?? "nil")"
+                + " backingScaleFactor=\(window?.backingScaleFactor ?? 0)"
+                + " pageZoom=\(webView.pageZoom)"
+                + " magnification=\(webView.magnification)")
+        }
+        print("[LoginLayoutDiagnostic] page \(message.body)")
     }
 }
