@@ -437,6 +437,78 @@ struct WebViewConfigurations {
             };
             waitForControl();
         })();
+        // Temporary breakpoint watcher. Read-only: during live window resizing it reports only when
+        // innerWidth crosses X's narrow breakpoint (517px, from X's stylesheet), with the login
+        // dialog's geometry and styles at that moment.
+        (function () {
+            const breakpointOf = () => (window.innerWidth >= 517 ? "narrow" : "max-narrow");
+            let lastBreakpoint = null;
+            let crossings = 0;
+            const round = (value) => Math.round(value * 100) / 100;
+            const variantsOf = (token) => {
+                const parts = [];
+                let depth = 0, current = "";
+                for (const character of token) {
+                    if (character === "[") depth += 1;
+                    if (character === "]") depth -= 1;
+                    if (character === ":" && depth === 0) { parts.push(current); current = ""; } else { current += character; }
+                }
+                return parts;
+            };
+            const isResponsiveVariant = (variant) =>
+                /^(max-)?(narrow|sm|md|lg|xl|2xl|wide)$/.test(variant)
+                || variant.startsWith("min-[") || variant.startsWith("max-[") || variant.startsWith("@");
+            const findDialog = () => {
+                const dialogs = Array.from(document.querySelectorAll('[role="dialog"]'));
+                return dialogs.find((dialog) => Array.from(dialog.classList).some((token) => variantsOf(token).some(isResponsiveVariant)))
+                    || dialogs[0] || null;
+            };
+            const dialogState = (dialog) => {
+                const r = dialog.getBoundingClientRect();
+                const style = getComputedStyle(dialog);
+                const computed = {};
+                ["inset", "top", "right", "bottom", "left",
+                 "margin-top", "margin-right", "margin-bottom", "margin-left",
+                 "width", "height", "max-width",
+                 "padding", "padding-top", "padding-right", "padding-bottom", "padding-left",
+                 "border-radius", "border-top-left-radius", "box-shadow", "background-color", "overflow"]
+                    .forEach((name) => { computed[name] = style.getPropertyValue(name); });
+                return {
+                    aria: (dialog.getAttribute("aria-label") || "").slice(0, 60) || null,
+                    rect: { x: round(r.x), y: round(r.y), width: round(r.width), height: round(r.height) },
+                    computed: computed,
+                    responsiveTokens: Array.from(dialog.classList).filter((token) => variantsOf(token).some(isResponsiveVariant))
+                };
+            };
+            const onResize = () => {
+                const breakpoint = breakpointOf();
+                if (lastBreakpoint === null) {
+                    lastBreakpoint = breakpoint;
+                    return;
+                }
+                if (breakpoint === lastBreakpoint) return;
+                const previous = lastBreakpoint;
+                lastBreakpoint = breakpoint;
+                crossings += 1;
+                const viewport = window.visualViewport;
+                const dialog = findDialog();
+                webkit.messageHandlers.\(Self.loginLayoutDiagnosticHandlerName).postMessage(JSON.stringify({
+                    kind: "breakpointCrossing",
+                    crossing: crossings,
+                    from: previous,
+                    breakpoint: breakpoint,
+                    viewport: {
+                        innerWidth: window.innerWidth, innerHeight: window.innerHeight,
+                        visualViewport: viewport ? { width: viewport.width, height: viewport.height } : null
+                    },
+                    dialog: dialog ? dialogState(dialog) : null
+                }));
+            };
+            document.addEventListener("DOMContentLoaded", () => {
+                if (lastBreakpoint === null && window.innerWidth > 0) lastBreakpoint = breakpointOf();
+            });
+            window.addEventListener("resize", onResize, { passive: true });
+        })();
         """
 
     // Temporary login responsive-class inventory. Read-only: whenever the onboarding UI shows a
