@@ -200,19 +200,29 @@ struct WebViewConfigurations {
         });
         """
 
-    // Temporary login-layout diagnostic. Read-only: waits until a visible login control exists,
-    // lets layout settle for two animation frames, then reports viewport, document and
-    // ancestor-chain geometry once through its own message handler.
+    // Temporary login-layout diagnostic. Read-only: waits until a meaningful visible login control
+    // exists (not a 1x1 accessibility sentinel), lets layout settle for two animation frames, then
+    // reports viewport, document and ancestor-chain geometry once through its own message handler.
     private static let loginLayoutDiagnostic: String = """
         (function () {
             const rect = (element) => {
                 const r = element.getBoundingClientRect();
                 return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) };
             };
+            // Rendered, at least 100x20, intersecting the viewport, and not hidden by display,
+            // visibility or opacity. Opacity does not inherit, so ancestors are checked too.
             const isVisible = (element) => {
                 const r = element.getBoundingClientRect();
-                return r.width > 0 && r.height > 0;
+                if (r.width < 100 || r.height < 20) return false;
+                if (r.right <= 0 || r.bottom <= 0 || r.left >= window.innerWidth || r.top >= window.innerHeight) return false;
+                const style = getComputedStyle(element);
+                if (style.display === "none" || style.visibility === "hidden") return false;
+                for (let node = element; node && node !== document.documentElement; node = node.parentElement) {
+                    if (parseFloat(getComputedStyle(node).opacity) === 0) return false;
+                }
+                return true;
             };
+            const hasVisibleText = (element) => (element.innerText || "").trim().length > 0;
             const describe = (element) => {
                 const style = getComputedStyle(element);
                 return {
@@ -230,19 +240,28 @@ struct WebViewConfigurations {
                     }
                 };
             };
-            // Visible login controls: text inputs first, otherwise buttons. Input values are never read.
+            // Meaningful visible login controls: inputs, and buttons with visible text. Input values are never read.
             const controls = () => {
                 const inputs = Array.from(document.querySelectorAll('input:not([type="hidden"])')).filter(isVisible);
-                const buttons = Array.from(document.querySelectorAll('button, [role="button"]')).filter(isVisible);
+                const buttons = Array.from(document.querySelectorAll('button, [role="button"]'))
+                    .filter((element) => isVisible(element) && hasVisibleText(element));
                 return { inputs: inputs, buttons: buttons };
             };
             const findTarget = () => {
                 const found = controls();
                 return found.inputs[0] || found.buttons[0] || null;
             };
+            let reported = false;
+            let observer = null;
             const report = () => {
+                if (reported) return;
                 const target = findTarget();
-                if (!target) return;
+                if (!target) {
+                    // The control went away while layout settled; keep waiting for it.
+                    waitForControl();
+                    return;
+                }
+                reported = true;
                 const ancestors = [];
                 for (let element = target.parentElement, depth = 0;
                      element && element !== document.documentElement && depth < 8;
@@ -289,23 +308,33 @@ struct WebViewConfigurations {
                         buttonCount: found.buttons.length,
                         firstControls: found.inputs.concat(found.buttons).slice(0, 6).map(summarize)
                     },
-                    target: describe(target),
+                    target: Object.assign(describe(target), { kind: target.tagName.toLowerCase() === "input" ? "input" : "button" }),
                     ancestors: ancestors
                 }));
             };
             const settleThenReport = () => {
                 requestAnimationFrame(() => requestAnimationFrame(report));
             };
-            if (findTarget()) {
-                settleThenReport();
-                return;
-            }
-            const observer = new MutationObserver(() => {
-                if (!findTarget()) return;
-                observer.disconnect();
-                settleThenReport();
-            });
-            observer.observe(document, { childList: true, subtree: true });
+            // No timeout: waits until the real control exists. Attribute changes are observed too,
+            // because the page can reveal content by switching classes or styles without adding nodes.
+            const waitForControl = () => {
+                if (findTarget()) {
+                    settleThenReport();
+                    return;
+                }
+                if (observer) return;
+                observer = new MutationObserver(() => {
+                    if (!findTarget()) return;
+                    observer.disconnect();
+                    observer = null;
+                    settleThenReport();
+                });
+                observer.observe(document, {
+                    childList: true, subtree: true,
+                    attributes: true, attributeFilter: ["style", "class", "hidden", "aria-hidden"]
+                });
+            };
+            waitForControl();
         })();
         """
 
