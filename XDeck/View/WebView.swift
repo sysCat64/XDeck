@@ -993,71 +993,42 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
         DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak webView] in
             guard let webView = webView else { return }
 
+            let webKitBundle = Bundle(for: WKWebView.self)
+            let webKitInfo = webKitBundle.infoDictionary ?? [:]
+            let osVersion = ProcessInfo.processInfo.operatingSystemVersion
+            WebViewDiagnostics.log(
+                "clean runtime read native "
+                    + "webKitShortVersion=\(webKitInfo["CFBundleShortVersionString"] as? String ?? "<unavailable>") "
+                    + "webKitBundleVersion=\(webKitInfo["CFBundleVersion"] as? String ?? "<unavailable>") "
+                    + "webKitBundlePath=\(String(reflecting: webKitBundle.bundlePath)) "
+                    + "macOS=\(osVersion.majorVersion).\(osVersion.minorVersion).\(osVersion.patchVersion)")
+
             // Identical to the expression run manually in the Safari 17.6 Web Inspector baseline.
             let expression = #"""
                 (() => {
-                  const toSrc = f => { try { return Function.prototype.toString.call(f); } catch (e) { return ""; } };
-                  const isNative = f => typeof f === "function" && /\[native code\]/.test(toSrc(f));
-                  const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
-
-                  const entryEl = Array.prototype.find.call(document.scripts, s =>
-                    String(s.type).toLowerCase() === "module" && s.src.indexOf("/entry-client-logged-out-") !== -1);
-                  const entrySrc = entryEl ? entryEl.src.split("?")[0].replace(/^https?:\/\/[^/]+/, "") : "<none>";
-
-                  const ids = window._sentryDebugIds;
-                  const idValues = ids && typeof ids === "object" ? Object.values(ids) : [];
-                  const started = id => idValues.indexOf(id) !== -1;
-
-                  const rtNames = performance.getEntriesByType("resource").map(e => String(e.name).split("?")[0]);
-                  const rtHas = file => rtNames.some(n => n.endsWith("/" + file));
-
-                  const lang = document.documentElement.getAttribute("lang");
-                  const isJa = String(lang || "").toLowerCase().indexOf("ja") === 0;
-                  const locales = isJa
-                    ? [["ja-D0XYHMW4.js", "bef64fd3-840c-4939-8a19-91c0c2a4fa3b"],
-                       ["ja-DfUnl03v.js", "a2ac435c-3b43-4c5f-b3fc-46cb575e8bc4"],
-                       ["ja-CfgzxN8m.js", "9d28a81d-fed6-444d-ad57-fee53edf7d92"],
-                       ["ja-9hSKK9vH.js", "03a4c116-8e70-4f02-9634-5d5ea0281d33"]]
-                    : [["en-CZvhHm-V.js", "a03ff173-3e89-4dde-882e-87300b32cebc"],
-                       ["en-BwDj8DEf.js", "4f0f3486-4fa8-435f-a94b-932b7913dc76"],
-                       ["en-BPFwhnqE.js", "60f4ffdc-f5cc-4b70-8bce-67d144e49331"],
-                       ["en-CFbtUrW8.js", "cc2df4ed-0bda-4c20-9612-36b8d0fe6ed5"]];
-
-                  let reactContainerMarkerPresent = false;
-                  for (const name of Object.getOwnPropertyNames(document)) {
-                    if (name.indexOf("__reactContainer$") === 0) { reactContainerMarkerPresent = true; break; }
-                  }
-
-                  const releaseDesc = Object.getOwnPropertyDescriptor(window, "SENTRY_RELEASE");
-                  const release = releaseDesc && own(releaseDesc, "value") ? releaseDesc.value : undefined;
-                  const lastDesc = Object.getOwnPropertyDescriptor(window, "_sentryDebugIdIdentifier");
-
+                  const kind = f => {
+                    if (typeof f !== "function") return typeof f;
+                    let src = "";
+                    try { src = Function.prototype.toString.call(f); } catch (e) { return "function:unreadable"; }
+                    return /\[native code\]/.test(src) ? "native" : "js";
+                  };
+                  const AP = Array.prototype;
                   return JSON.stringify({
-                    entrySrc: entrySrc,
-                    sentryRelease: release && typeof release === "object" ? String(release.id) : "<none>",
-                    lastStartedModule: lastDesc && own(lastDesc, "value") ? String(lastDesc.value) : "<none>",
-                    debugIdCount: idValues.length,
-                    entryStarted: started("535f7c0f-29c1-4942-9c95-82b6ea1deb19"),
-                    viewAsStarted: started("de6ca102-e554-45de-9803-a9403866bbf3"),
-                    urlParseOwn: own(URL, "parse"),
-                    urlParseSrc: toSrc(URL.parse).slice(0, 80),
-                    errorIsErrorOwn: own(Error, "isError"),
-                    errorIsErrorNative: isNative(Error.isError),
-                    withResolversOwn: own(Promise, "withResolvers"),
-                    withResolversNative: isNative(Promise.withResolvers),
-                    ricNative: isNative(window.requestIdleCallback),
-                    hasGtCookie: /(?:^|;\s*)gt=/.test(document.cookie),
-                    guestActivatePresent: rtNames.some(n => n.endsWith("/1.1/guest/activate.json")),
-                    lang: lang === null ? "<null>" : lang,
-                    localeResource: locales.map(l => l[0] + "=" + rtHas(l[0])).join(","),
-                    localeStarted: locales.map(l => l[0] + "=" + started(l[1])).join(","),
-                    headerlessResource: rtHas("_headerless-DplpFx2F.js"),
-                    headerlessStarted: started("eab8de91-acf3-45ac-971d-ad085c543528"),
-                    webComponentResource: rtHas("web-DBVXEWWD.js"),
-                    webComponentStarted: started("42b1c795-2fed-4241-95ac-2d319d356d93"),
-                    rtCount: rtNames.length,
-                    resourceTimingBufferSaturated: rtNames.length >= 2000,
-                    reactContainerMarkerPresent: reactContainerMarkerPresent
+                    "Array.prototype.at": kind(AP.at),
+                    "Array.prototype.findLast": kind(AP.findLast),
+                    "Array.prototype.findLastIndex": kind(AP.findLastIndex),
+                    "Array.prototype.toSorted": kind(AP.toSorted),
+                    "Array.prototype.toReversed": kind(AP.toReversed),
+                    "Array.prototype.toSpliced": kind(AP.toSpliced),
+                    "Array.prototype.with": kind(AP.with),
+                    "Object.hasOwn": kind(Object.hasOwn),
+                    "Object.groupBy": kind(Object.groupBy),
+                    "Promise.withResolvers": kind(Promise.withResolvers),
+                    "structuredClone": kind(window.structuredClone),
+                    "AbortSignal.timeout": kind(typeof AbortSignal === "function" ? AbortSignal.timeout : undefined),
+                    "URL.canParse": kind(URL.canParse),
+                    "URL.parse": kind(URL.parse),
+                    "requestIdleCallback": kind(window.requestIdleCallback)
                   });
                 })()
                 """#
@@ -1066,15 +1037,15 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
                 switch result {
                 case .success(let value):
                     guard let json = value as? String else {
-                        WebViewDiagnostics.log("clean passive read returned no string")
+                        WebViewDiagnostics.log("clean runtime read returned no string")
                         return
                     }
                     // Logged verbatim so it stays byte-comparable with the Safari baseline; the JSON
-                    // holds only booleans, counts, debug IDs, a script path and the lang attribute.
-                    WebViewDiagnostics.log("clean passive read +10s \(json)")
+                    // holds only feature names and their typeof/native classification.
+                    WebViewDiagnostics.log("clean runtime read +10s \(json)")
                 case .failure(let error):
                     WebViewDiagnostics.log(
-                        "clean passive read failed "
+                        "clean runtime read failed "
                             + String(WebViewDiagnostics.sanitized(error.localizedDescription).prefix(500)))
                 }
             }
