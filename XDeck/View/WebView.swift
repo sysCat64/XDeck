@@ -85,11 +85,15 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
     }
 
     // Logs each event once, as elapsed time since the initial load() of this web view.
-    private func logStartupTiming(_ event: String) {
+    // A marker may carry detail after its event name: "<event>:<detail>".
+    private func logStartupTiming(_ marker: String) {
+        let parts = marker.split(separator: ":", maxSplits: 1)
+        let event = parts.first.map(String.init) ?? marker
         guard let label = owner.diagnosticLabel, let start = startupTimingStart,
               loggedStartupTimingEvents.insert(event).inserted else { return }
         let elapsedMs = Int(((ProcessInfo.processInfo.systemUptime - start) * 1000).rounded())
-        print("[StartupTiming] \(label) event=\(event) elapsedMs=\(elapsedMs)")
+        let detail = parts.count > 1 ? " detail=\(parts[1])" : ""
+        print("[StartupTiming] \(label) event=\(event) elapsedMs=\(elapsedMs)\(detail)")
     }
 
     // MARK: WKNavigationDelegate

@@ -186,45 +186,78 @@ struct WebViewConfigurations {
         """
 
     private static let clickForYouTab: String = """
+        \(startupTimingMarker("tabWaitRegistered:index=0"))
         waitForElement("a[href='/home'][role='tab']", 0, (element) => {
-            \(reportStartupTimingTabClick)
+            \(startupTimingMarker("tabClick"))
             element.click();
         });
         """
 
     private static let clickFollowingTab: String = """
+        \(startupTimingMarker("tabWaitRegistered:index=1"))
         waitForElement("a[href='/home'][role='tab']", 1, (element) => {
-            \(reportStartupTimingTabClick)
+            \(startupTimingMarker("tabClick"))
             element.click();
         });
         """
 
     // Temporary startup-timing diagnostic. Only reports when the .startupTiming script enabled it.
-    private static let reportStartupTimingTabClick: String = """
-        if (window.__xdeckStartupTimingEnabled === true) {
-            webkit.messageHandlers.\(Self.handlerName).postMessage("\(Self.startupTimingMessagePrefix)tabClick");
-        }
-        """
+    private static func startupTimingMarker(_ event: String) -> String {
+        return """
+            if (window.__xdeckStartupTimingEnabled === true) {
+                webkit.messageHandlers.\(Self.handlerName).postMessage("\(Self.startupTimingMessagePrefix)\(event)");
+            }
+            """
+    }
 
     // Temporary startup-timing diagnostic: passively reports when the first timeline cell exists,
     // then stops observing. It never modifies the DOM.
     private static let startupTiming: String = """
         window.__xdeckStartupTimingEnabled = true;
         (function () {
-            const selector = 'div[data-testid="cellInnerDiv"]';
-            const report = () => {
-                webkit.messageHandlers.\(Self.handlerName).postMessage("\(Self.startupTimingMessagePrefix)firstCell");
+            const post = (event) => {
+                webkit.messageHandlers.\(Self.handlerName).postMessage("\(Self.startupTimingMessagePrefix)" + event);
             };
-            if (document.querySelector(selector)) {
-                report();
-                return;
-            }
-            const observer = new MutationObserver(() => {
-                if (!document.querySelector(selector)) return;
-                observer.disconnect();
-                report();
+            // Passive snapshot of home-tab markup: the selector XDeck clicks, and every role=tab element.
+            const tabSnapshot = () => {
+                const describe = (element) => ({
+                    tag: element.tagName.toLowerCase(),
+                    href: element.getAttribute("href"),
+                    selected: element.getAttribute("aria-selected"),
+                    text: (element.textContent || "").trim().slice(0, 40)
+                });
+                const homeTabs = Array.from(document.querySelectorAll("a[href='/home'][role='tab']"));
+                const roleTabs = Array.from(document.querySelectorAll('[role="tab"]'));
+                return JSON.stringify({
+                    homeTabCount: homeTabs.length,
+                    homeTabs: homeTabs.slice(0, 6).map(describe),
+                    roleTabCount: roleTabs.length,
+                    roleTabs: roleTabs.slice(0, 8).map(describe)
+                });
+            };
+            const whenPresent = (selector, callback) => {
+                if (document.querySelector(selector)) {
+                    callback();
+                    return;
+                }
+                const observer = new MutationObserver(() => {
+                    if (!document.querySelector(selector)) return;
+                    observer.disconnect();
+                    callback();
+                });
+                observer.observe(document, { childList: true, subtree: true });
+            };
+
+            document.addEventListener("DOMContentLoaded", () => {
+                post("domContentLoaded:" + tabSnapshot());
             });
-            observer.observe(document, { childList: true, subtree: true });
+            whenPresent('[role="tab"]', () => {
+                post("tabsAppeared:" + tabSnapshot());
+            });
+            whenPresent('div[data-testid="cellInnerDiv"]', () => {
+                post("firstCell");
+                post("firstCellTabs:" + tabSnapshot());
+            });
         })();
         """
 
