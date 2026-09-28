@@ -638,10 +638,11 @@ struct WebViewConfigurations {
         """
 
     // X's login dialog lays itself out with Tailwind "narrow:" utilities inside
-    // @media (width>=517px). WebKit 613 (macOS 12 WKWebView) cannot parse media-query range
-    // syntax, drops those rules, and the dialog ends up at the top-left. This re-declares the
-    // dialog's structural narrow: utilities with classic min-width syntax, keyed to the same
-    // classes on role="dialog". The <style> goes into <head>, where React hydration skips it.
+    // @media (width>=517px) and "max-narrow:" utilities inside @media not all and (width>=517px).
+    // WebKit 613 (macOS 12 WKWebView) cannot parse media-query range syntax and drops both
+    // branches, so the dialog ends up at the top-left (or collapses below 517px). This re-declares
+    // the dialog's utilities, copied from X's stylesheet, with classic min-width syntax and keyed to
+    // the same classes on role="dialog". The <style> goes into <head>, where React hydration skips it.
     private static let loginDialogCompatibility: String = #"""
         (function () {
             const css = String.raw`
@@ -659,6 +660,26 @@ struct WebViewConfigurations {
                         --tw-shadow: var(--x-shadow-popup);
                         box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
                     }
+                }
+                @media not all and (min-width: 517px) {
+                    [role="dialog"].max-narrow\:inset-0 { inset: 0; }
+                    [role="dialog"].max-narrow\:rounded-none { border-radius: 0; }
+                    [role="dialog"].max-narrow\:p-4 { padding: 16px; }
+                    [role="dialog"].max-narrow\:\[--x-modal-bg\:var\(--x-bg-primary\)\] { --x-modal-bg: var(--x-bg-primary); }
+                    [role="dialog"].max-narrow\:bg-primary { background-color: var(--x-bg-primary); }
+                    [role="dialog"].max-narrow\:shadow-none {
+                        --tw-shadow: 0 0 #0000;
+                        box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
+                    }
+                    [role="dialog"].max-narrow\:data-\[starting-style\]\:translate-y-full[data-starting-style] {
+                        --tw-translate-y: 100%;
+                        translate: var(--tw-translate-x) var(--tw-translate-y);
+                    }
+                    [role="dialog"].max-narrow\:data-\[ending-style\]\:translate-y-full[data-ending-style] {
+                        --tw-translate-y: 100%;
+                        translate: var(--tw-translate-x) var(--tw-translate-y);
+                    }
+                    [role="dialog"].max-narrow\:p-0\! { padding: 0 !important; }
                 }
             `;
             const install = () => {
