@@ -549,6 +549,58 @@ struct WebViewConfigurations {
                     matchingRules: matchingRules.slice(0, 60)
                 };
             };
+            // Read-only settle check: X's dialog has transition-all duration-200, so the values at the
+            // crossing can be transition start values. This reports once after the dialog's own
+            // transitions finish: when every property seen in transitionrun has ended or been
+            // cancelled, or, if none were seen, at the first transitionend. Listeners are removed
+            // after the report and when a newer crossing starts.
+            let stopWatchingTransitions = null;
+            const watchTransitions = (dialog, breakpoint, crossing) => {
+                if (stopWatchingTransitions) stopWatchingTransitions();
+                const pending = new Set();
+                let sawRun = false;
+                const onRun = (event) => {
+                    if (event.target !== dialog) return;
+                    sawRun = true;
+                    pending.add(event.propertyName);
+                };
+                const onEnd = (event) => {
+                    if (event.target !== dialog) return;
+                    pending.delete(event.propertyName);
+                    if (sawRun && pending.size > 0) return;
+                    stop();
+                    const r = dialog.getBoundingClientRect();
+                    const style = getComputedStyle(dialog);
+                    webkit.messageHandlers.\(Self.loginLayoutDiagnosticHandlerName).postMessage(JSON.stringify({
+                        kind: "breakpointTransitionEnd",
+                        crossing: crossing,
+                        breakpoint: breakpoint,
+                        eventType: event.type,
+                        propertyName: event.propertyName,
+                        settledAfterAllRunningTransitions: sawRun,
+                        viewport: { innerWidth: window.innerWidth, innerHeight: window.innerHeight },
+                        rect: { x: round(r.x), y: round(r.y), width: round(r.width), height: round(r.height) },
+                        computed: {
+                            "border-radius": style.getPropertyValue("border-radius"),
+                            "border-top-left-radius": style.getPropertyValue("border-top-left-radius"),
+                            "box-shadow": style.getPropertyValue("box-shadow"),
+                            "--tw-shadow": style.getPropertyValue("--tw-shadow").trim(),
+                            "background-color": style.getPropertyValue("background-color"),
+                            "overflow": style.getPropertyValue("overflow")
+                        }
+                    }));
+                };
+                const stop = () => {
+                    dialog.removeEventListener("transitionrun", onRun);
+                    dialog.removeEventListener("transitionend", onEnd);
+                    dialog.removeEventListener("transitioncancel", onEnd);
+                    stopWatchingTransitions = null;
+                };
+                dialog.addEventListener("transitionrun", onRun);
+                dialog.addEventListener("transitionend", onEnd);
+                dialog.addEventListener("transitioncancel", onEnd);
+                stopWatchingTransitions = stop;
+            };
             const onResize = () => {
                 const breakpoint = breakpointOf();
                 if (lastBreakpoint === null) {
@@ -571,8 +623,14 @@ struct WebViewConfigurations {
                         visualViewport: viewport ? { width: viewport.width, height: viewport.height } : null
                     },
                     dialog: dialog ? dialogState(dialog) : null,
-                    cascade: dialog ? cascadeFor(dialog) : null
+                    cascade: dialog ? cascadeFor(dialog) : null,
+                    transition: dialog ? {
+                        property: getComputedStyle(dialog).getPropertyValue("transition-property"),
+                        duration: getComputedStyle(dialog).getPropertyValue("transition-duration"),
+                        delay: getComputedStyle(dialog).getPropertyValue("transition-delay")
+                    } : null
                 }));
+                if (dialog) watchTransitions(dialog, breakpoint, crossings);
             };
             document.addEventListener("DOMContentLoaded", () => {
                 if (lastBreakpoint === null && window.innerWidth > 0) lastBreakpoint = breakpointOf();
