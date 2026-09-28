@@ -235,6 +235,47 @@ struct WebViewConfigurations {
                     roleTabs: roleTabs.slice(0, 8).map(describe)
                 });
             };
+            // Passive snapshot of where the role=tab elements sit, to choose a scoped tab selector.
+            const tabStructure = () => {
+                const node = (element) => ({
+                    tag: element.tagName.toLowerCase(),
+                    role: element.getAttribute("role"),
+                    testid: element.getAttribute("data-testid"),
+                    aria: (element.getAttribute("aria-label") || "").slice(0, 40) || null,
+                    children: element.children.length
+                });
+                const count = (selector) => document.querySelectorAll(selector).length;
+                const tablists = Array.from(document.querySelectorAll('[role="tablist"]'));
+                const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
+                return JSON.stringify({
+                    tablistCount: tablists.length,
+                    tablists: tablists.slice(0, 4).map((list) => Object.assign(node(list), {
+                        tabCount: list.querySelectorAll('[role="tab"]').length,
+                        directTabCount: Array.from(list.children).filter((child) => child.getAttribute("role") === "tab").length
+                    })),
+                    tabs: tabs.slice(0, 4).map((tab) => {
+                        const ancestors = [];
+                        for (let parent = tab.parentElement, depth = 0;
+                             parent && parent !== document.body && depth < 8;
+                             parent = parent.parentElement, depth += 1) {
+                            ancestors.push(node(parent));
+                        }
+                        return {
+                            self: node(tab),
+                            inTablist: tab.closest('[role="tablist"]') !== null,
+                            inMain: tab.closest("main") !== null,
+                            ancestors: ancestors
+                        };
+                    }),
+                    candidates: {
+                        "div[role=tab]": count('div[role="tab"]'),
+                        "[role=tablist] div[role=tab]": count('[role="tablist"] div[role="tab"]'),
+                        "[role=tablist] > div[role=tab]": count('[role="tablist"] > div[role="tab"]'),
+                        "main [role=tablist] div[role=tab]": count('main [role="tablist"] div[role="tab"]'),
+                        "[data-testid=primaryColumn] [role=tablist] div[role=tab]": count('[data-testid="primaryColumn"] [role="tablist"] div[role="tab"]')
+                    }
+                });
+            };
             const whenPresent = (selector, callback) => {
                 if (document.querySelector(selector)) {
                     callback();
@@ -257,6 +298,7 @@ struct WebViewConfigurations {
             whenPresent('div[data-testid="cellInnerDiv"]', () => {
                 post("firstCell");
                 post("firstCellTabs:" + tabSnapshot());
+                post("tabStructure:" + tabStructure());
             });
         })();
         """
