@@ -47,12 +47,64 @@ struct WebViewConfigurations {
         let configuration = WKWebViewConfiguration()
         let userContentController = WKUserContentController()
         configuration.userContentController = userContentController
+        // Added first so the shims are in place before X's module graph evaluates.
+        userContentController.addUserScript(WKUserScript(
+            source: compatibilityShims,
+            injectionTime: .atDocumentStart, forMainFrameOnly: true))
         let userScript = WKUserScript(
             source: script,
             injectionTime: .atDocumentStart, forMainFrameOnly: true)
         userContentController.addUserScript(userScript)
         return configuration
     }
+
+    // WKWebView on macOS 12 (WebKit 17613, the Safari 17.6 build) lacks built-ins that X's
+    // web client uses unconditionally. Each shim installs only when the native API is missing,
+    // so newer WebKit keeps its own implementation.
+    // - Array.prototype.toSorted: called at module top level while X's module graph evaluates;
+    //   without it evaluation stops and the page stays blank.
+    // - AbortSignal.timeout: passed to every onboarding/login flow request; without it the
+    //   login page shows "Something went wrong".
+    private static let compatibilityShims: String = """
+        (function () {
+            if (typeof Array.prototype.toSorted !== "function") {
+                Object.defineProperty(Array.prototype, "toSorted", {
+                    value: function toSorted(comparefn) {
+                        if (comparefn !== undefined && typeof comparefn !== "function") {
+                            throw new TypeError("The comparison function must be either a function or undefined");
+                        }
+                        var source = Object(this);
+                        var length = Math.min(Math.max(Math.trunc(Number(source.length)) || 0, 0), Number.MAX_SAFE_INTEGER);
+                        var copy = new Array(length);
+                        for (var index = 0; index < length; index += 1) copy[index] = source[index];
+                        return copy.sort(comparefn);
+                    },
+                    writable: true,
+                    enumerable: false,
+                    configurable: true
+                });
+            }
+
+            if (typeof AbortSignal === "function" && typeof AbortSignal.timeout !== "function") {
+                Object.defineProperty(AbortSignal, "timeout", {
+                    value: function timeout(milliseconds) {
+                        var delay = Number(milliseconds);
+                        if (!isFinite(delay) || delay < 0) {
+                            throw new TypeError("AbortSignal.timeout requires a finite, non-negative number of milliseconds");
+                        }
+                        var controller = new AbortController();
+                        setTimeout(function () {
+                            controller.abort(new DOMException("The operation timed out.", "TimeoutError"));
+                        }, Math.min(Math.trunc(delay), 2147483647));
+                        return controller.signal;
+                    },
+                    writable: true,
+                    enumerable: false,
+                    configurable: true
+                });
+            }
+        })();
+        """
 
     private static let global: String = """
         window.onerror = function(msg, url, line, column, error) {
