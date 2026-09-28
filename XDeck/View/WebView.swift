@@ -16,6 +16,8 @@ struct WebView: NSViewRepresentable {
     var scriptExecutionToken: Int = 0
     var refreshSwitch: Bool = false
     var configuration: WKWebViewConfiguration? = nil
+    // Temporary startup-timing diagnostic: when set, the coordinator logs [StartupTiming] records.
+    var diagnosticLabel: String? = nil
 
     func makeNSView(context: Context) -> WKWebView {
         let webView: WKWebView
@@ -29,6 +31,7 @@ struct WebView: NSViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
         let request = URLRequest(url: url)
+        context.coordinator.startStartupTiming()
         webView.load(request)
         return webView
     }
@@ -62,6 +65,8 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
     var lastUrl: URL
     var refreshSwitch: Bool
     var lastHandledScriptToken: Int
+    private var startupTimingStart: TimeInterval?
+    private var loggedStartupTimingEvents = Set<String>()
 
     init(owner: WebView) {
         self.owner = owner
@@ -72,12 +77,32 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
         owner.configuration?.userContentController.add(self, name: WebViewConfigurations.handlerName)
     }
 
+    // MARK: Startup timing (temporary diagnostic)
+    func startStartupTiming() {
+        guard owner.diagnosticLabel != nil else { return }
+        startupTimingStart = ProcessInfo.processInfo.systemUptime
+        logStartupTiming("loadRequested")
+    }
+
+    // Logs each event once, as elapsed time since the initial load() of this web view.
+    private func logStartupTiming(_ event: String) {
+        guard let label = owner.diagnosticLabel, let start = startupTimingStart,
+              loggedStartupTimingEvents.insert(event).inserted else { return }
+        let elapsedMs = Int(((ProcessInfo.processInfo.systemUptime - start) * 1000).rounded())
+        print("[StartupTiming] \(label) event=\(event) elapsedMs=\(elapsedMs)")
+    }
+
     // MARK: WKNavigationDelegate
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         owner.isLoading = true
+        logStartupTiming("didStart")
+    }
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        logStartupTiming("didCommit")
     }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         owner.isLoading = false
+        logStartupTiming("didFinish")
     }
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         if case .linkActivated = navigationAction.navigationType, let url = navigationAction.request.url {
@@ -111,6 +136,12 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
     // MARK: WKScriptMessageHandler
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.name == WebViewConfigurations.handlerName else { return }
+        let prefix = WebViewConfigurations.startupTimingMessagePrefix
+        if let body = message.body as? String, body.hasPrefix(prefix) {
+            // Startup-timing markers are logged here and never forwarded as XDeck messages.
+            logStartupTiming(String(body.dropFirst(prefix.count)))
+            return
+        }
         print("[WKScriptMessage] \(message.body)")
         owner.messageFromWebView = message.body as? String
     }

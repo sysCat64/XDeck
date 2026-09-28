@@ -12,6 +12,7 @@ struct WebViewConfigurations {
         case hideSideHeader
         case hideAds
         case detectMediaOverlay(columnIndex: Int)
+        case startupTiming
 
         var scriptContent: String {
             switch self {
@@ -24,6 +25,7 @@ struct WebViewConfigurations {
             case .hideSideHeader: return WebViewConfigurations.hideSideHeader
             case .hideAds: return WebViewConfigurations.hideAds
             case .detectMediaOverlay(let columnIndex): return WebViewConfigurations.detectMediaOverlay(columnIndex: columnIndex)
+            case .startupTiming: return WebViewConfigurations.startupTiming
             }
         }
 
@@ -31,13 +33,15 @@ struct WebViewConfigurations {
             switch self {
             case .findUserName, .findThemeColor, .clickForYouTab, .clickFollowingTab, .hideSideHeader, .hidePostArea, .hideAds:
                 return true
-            case .global, .detectMediaOverlay:
+            case .global, .detectMediaOverlay, .startupTiming:
                 return false
             }
         }
     }
 
     static let handlerName = "handler";
+    // Reserved prefix for temporary startup-timing markers; normal XDeck messages are JSON objects.
+    static let startupTimingMessagePrefix = "__xdeckStartupTiming:"
 
     static func makeConfiguration(onLoadScripts: [OnLoadScript]) -> WKWebViewConfiguration {
         let script = [
@@ -183,14 +187,45 @@ struct WebViewConfigurations {
 
     private static let clickForYouTab: String = """
         waitForElement("a[href='/home'][role='tab']", 0, (element) => {
+            \(reportStartupTimingTabClick)
             element.click();
         });
         """
 
     private static let clickFollowingTab: String = """
         waitForElement("a[href='/home'][role='tab']", 1, (element) => {
+            \(reportStartupTimingTabClick)
             element.click();
         });
+        """
+
+    // Temporary startup-timing diagnostic. Only reports when the .startupTiming script enabled it.
+    private static let reportStartupTimingTabClick: String = """
+        if (window.__xdeckStartupTimingEnabled === true) {
+            webkit.messageHandlers.\(Self.handlerName).postMessage("\(Self.startupTimingMessagePrefix)tabClick");
+        }
+        """
+
+    // Temporary startup-timing diagnostic: passively reports when the first timeline cell exists,
+    // then stops observing. It never modifies the DOM.
+    private static let startupTiming: String = """
+        window.__xdeckStartupTimingEnabled = true;
+        (function () {
+            const selector = 'div[data-testid="cellInnerDiv"]';
+            const report = () => {
+                webkit.messageHandlers.\(Self.handlerName).postMessage("\(Self.startupTimingMessagePrefix)firstCell");
+            };
+            if (document.querySelector(selector)) {
+                report();
+                return;
+            }
+            const observer = new MutationObserver(() => {
+                if (!document.querySelector(selector)) return;
+                observer.disconnect();
+                report();
+            });
+            observer.observe(document, { childList: true, subtree: true });
+        })();
         """
 
     private static func wrapOnLoad(contents: [String]) -> String {
