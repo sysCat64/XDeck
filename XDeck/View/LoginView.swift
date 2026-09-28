@@ -31,11 +31,16 @@ struct LoginView: View {
             injectionTime: .atDocumentStart,
             forMainFrameOnly: true)
         configuration.userContentController.addUserScript(toSortedShim)
+        let abortSignalTimeoutShim = WKUserScript(
+            source: Self.abortSignalTimeoutShimScript,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true)
+        configuration.userContentController.addUserScript(abortSignalTimeoutShim)
         return configuration
     }
 
-    // The only compatibility shim in this diagnostic run: X's locale module calls
-    // Array.prototype.toSorted at module top level, and this WKWebView does not provide it.
+    // X's locale module calls Array.prototype.toSorted at module top level, and this
+    // WKWebView does not provide it.
     private static let toSortedShimScript = #"""
         (function () {
             if (typeof Array.prototype.toSorted === "function") return;
@@ -49,6 +54,30 @@ struct LoginView: View {
                     var copy = new Array(length);
                     for (var index = 0; index < length; index += 1) copy[index] = source[index];
                     return copy.sort(comparefn);
+                },
+                writable: true,
+                enumerable: false,
+                configurable: true
+            });
+        })();
+        """#
+
+    // Jetfuel's httpGet passes AbortSignal.timeout(...) to every flow request, and this
+    // WKWebView does not provide it, so the onboarding flow never loads.
+    private static let abortSignalTimeoutShimScript = #"""
+        (function () {
+            if (typeof AbortSignal !== "function" || typeof AbortSignal.timeout === "function") return;
+            Object.defineProperty(AbortSignal, "timeout", {
+                value: function timeout(milliseconds) {
+                    var delay = Number(milliseconds);
+                    if (!isFinite(delay) || delay < 0) {
+                        throw new TypeError("AbortSignal.timeout requires a finite, non-negative number of milliseconds");
+                    }
+                    var controller = new AbortController();
+                    setTimeout(function () {
+                        controller.abort(new DOMException("The operation timed out.", "TimeoutError"));
+                    }, Math.min(Math.trunc(delay), 2147483647));
+                    return controller.signal;
                 },
                 writable: true,
                 enumerable: false,

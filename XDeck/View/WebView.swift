@@ -993,7 +993,7 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
         DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak webView] in
             guard let webView = webView else { return }
 
-            // The Safari-validated passive Sentry read, plus the toSorted shim state.
+            // The Safari-validated passive Sentry read, plus the state of each diagnostic shim.
             let expression = #"""
                 (() => {
                   const toSrc = f => { try { return Function.prototype.toString.call(f); } catch (e) { return ""; } };
@@ -1060,7 +1060,10 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
                     reactContainerMarkerPresent: reactContainerMarkerPresent,
                     toSortedType: typeof Array.prototype.toSorted,
                     toSortedKind: typeof Array.prototype.toSorted !== "function" ? "missing"
-                      : (isNative(Array.prototype.toSorted) ? "native" : "js")
+                      : (isNative(Array.prototype.toSorted) ? "native" : "js"),
+                    abortSignalTimeoutType: typeof AbortSignal === "function" ? typeof AbortSignal.timeout : "<no AbortSignal>",
+                    abortSignalTimeoutKind: typeof AbortSignal !== "function" || typeof AbortSignal.timeout !== "function" ? "missing"
+                      : (isNative(AbortSignal.timeout) ? "native" : "js")
                   });
                 })()
                 """#
@@ -1069,15 +1072,15 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
                 switch result {
                 case .success(let value):
                     guard let json = value as? String else {
-                        WebViewDiagnostics.log("toSorted shim read returned no string")
+                        WebViewDiagnostics.log("shim read returned no string")
                         return
                     }
                     // Logged verbatim so it stays comparable with the earlier passive reads; the JSON
                     // holds only booleans, counts, debug IDs, a script path and the lang attribute.
-                    WebViewDiagnostics.log("toSorted shim read +10s \(json)")
+                    WebViewDiagnostics.log("shim read +10s \(json)")
                 case .failure(let error):
                     WebViewDiagnostics.log(
-                        "toSorted shim read failed "
+                        "shim read failed "
                             + String(WebViewDiagnostics.sanitized(error.localizedDescription).prefix(500)))
                 }
             }
