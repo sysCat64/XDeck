@@ -580,6 +580,13 @@ struct WebViewConfigurations {
                     [role="dialog"].narrow\:w-\[700px\] { width: 700px; }
                     [role="dialog"].narrow\:max-w-full { max-width: 100%; }
                     [role="dialog"].narrow\:overflow-hidden { overflow: hidden; }
+                    [role="dialog"].narrow\:rounded-lg { border-radius: calc(24px * var(--x-radius-m)); }
+                    [role="dialog"].narrow\:border { border-style: var(--tw-border-style); border-width: 1px; }
+                    [role="dialog"].narrow\:border-normal { border-color: var(--x-border-normal); }
+                    [role="dialog"].narrow\:shadow-popup {
+                        --tw-shadow: var(--x-shadow-popup);
+                        box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
+                    }
                 }
             `;
             const install = () => {
