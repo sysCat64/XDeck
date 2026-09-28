@@ -326,7 +326,11 @@ struct WebViewConfigurations {
                     "position", "top", "right", "bottom", "left", "inset",
                     "inset-inline-start", "inset-inline-end", "inset-block-start", "inset-block-end",
                     "margin-top", "margin-bottom", "translate", "rotate", "scale",
-                    "transform", "transform-origin", "z-index"
+                    "transform", "transform-origin", "z-index",
+                    "justify-self", "align-self", "place-self",
+                    "justify-items", "align-items", "place-items",
+                    "inline-size", "block-size", "max-inline-size", "max-block-size",
+                    "margin-inline-start", "margin-inline-end", "margin-block-start", "margin-block-end"
                 ];
                 const positioning = (element) => {
                     const style = getComputedStyle(element);
@@ -352,7 +356,10 @@ struct WebViewConfigurations {
                     cssSupports: {
                         translate: supports("translate", "-50% -50%"),
                         inset: supports("inset", "0"),
-                        insetInlineStart: supports("inset-inline-start", "0")
+                        insetInlineStart: supports("inset-inline-start", "0"),
+                        justifySelfCenter: supports("justify-self", "center"),
+                        alignSelfCenter: supports("align-self", "center"),
+                        placeSelfCenter: supports("place-self", "center")
                     }
                 } : null;
                 const found = controls();
