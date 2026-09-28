@@ -993,94 +993,88 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
         DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak webView] in
             guard let webView = webView else { return }
 
+            // Identical to the expression run manually in the Safari 17.6 Web Inspector baseline.
             let expression = #"""
                 (() => {
-                    const lang = document.documentElement.getAttribute("lang");
-                    const resourceNames = performance.getEntriesByType("resource").map(function (entry) {
-                        return String(entry.name).split("?")[0];
-                    });
-                    const hasResource = function (file) {
-                        return resourceNames.some(function (name) { return name.endsWith("/" + file); });
-                    };
-                    const localeChunks = String(lang || "").toLowerCase().indexOf("ja") === 0
-                        ? ["ja-D0XYHMW4.js", "ja-DfUnl03v.js", "ja-CfgzxN8m.js", "ja-9hSKK9vH.js"]
-                        : ["en-CZvhHm-V.js", "en-BwDj8DEf.js", "en-BPFwhnqE.js", "en-CFbtUrW8.js"];
-                    const locales = localeChunks.map(function (file) {
-                        return file + "=" + hasResource(file);
-                    }).join(",");
+                  const toSrc = f => { try { return Function.prototype.toString.call(f); } catch (e) { return ""; } };
+                  const isNative = f => typeof f === "function" && /\[native code\]/.test(toSrc(f));
+                  const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
 
-                    const jetfuelLinks = Array.prototype.filter.call(
-                        document.getElementsByTagName("link"),
-                        function (link) { return String(link.href).indexOf("use-jetfuel-dev-BGQfye3R.css") !== -1; });
+                  const entryEl = Array.prototype.find.call(document.scripts, s =>
+                    String(s.type).toLowerCase() === "module" && s.src.indexOf("/entry-client-logged-out-") !== -1);
+                  const entrySrc = entryEl ? entryEl.src.split("?")[0].replace(/^https?:\/\/[^/]+/, "") : "<none>";
 
-                    let reactContainerMarkerPresent = false;
-                    const documentPropertyNames = Object.getOwnPropertyNames(document);
-                    for (let index = 0; index < documentPropertyNames.length; index += 1) {
-                        if (documentPropertyNames[index].indexOf("__reactContainer$") === 0) {
-                            reactContainerMarkerPresent = true;
-                            break;
-                        }
-                    }
+                  const ids = window._sentryDebugIds;
+                  const idValues = ids && typeof ids === "object" ? Object.values(ids) : [];
+                  const started = id => idValues.indexOf(id) !== -1;
 
-                    const bootstrapDescriptor = Object.getOwnPropertyDescriptor(window, "$_TSR");
-                    const bootstrap = bootstrapDescriptor
-                        && Object.prototype.hasOwnProperty.call(bootstrapDescriptor, "value")
-                        ? bootstrapDescriptor.value : undefined;
-                    const initializedDescriptor = bootstrap !== null && typeof bootstrap === "object"
-                        ? Object.getOwnPropertyDescriptor(bootstrap, "initialized") : undefined;
+                  const rtNames = performance.getEntriesByType("resource").map(e => String(e.name).split("?")[0]);
+                  const rtHas = file => rtNames.some(n => n.endsWith("/" + file));
 
-                    return {
-                        rtCount: resourceNames.length,
-                        resourceTimingBufferSaturated: resourceNames.length >= 2000,
-                        lang: lang === null ? "<null>" : lang,
-                        locales: locales,
-                        headerlessChunkPresent: hasResource("_headerless-DplpFx2F.js"),
-                        webComponentChunkPresent: hasResource("web-DBVXEWWD.js"),
-                        jetfuelLinkPresent: jetfuelLinks.length > 0,
-                        jetfuelSheetPresent: jetfuelLinks.some(function (link) { return link.sheet !== null; }),
-                        reactContainerMarkerPresent: reactContainerMarkerPresent,
-                        bootstrapPresent: bootstrapDescriptor !== undefined,
-                        initializedPropertyPresent: initializedDescriptor !== undefined,
-                        initializedTrue: initializedDescriptor !== undefined
-                            && Object.prototype.hasOwnProperty.call(initializedDescriptor, "value")
-                            && initializedDescriptor.value === true
-                    };
+                  const lang = document.documentElement.getAttribute("lang");
+                  const isJa = String(lang || "").toLowerCase().indexOf("ja") === 0;
+                  const locales = isJa
+                    ? [["ja-D0XYHMW4.js", "bef64fd3-840c-4939-8a19-91c0c2a4fa3b"],
+                       ["ja-DfUnl03v.js", "a2ac435c-3b43-4c5f-b3fc-46cb575e8bc4"],
+                       ["ja-CfgzxN8m.js", "9d28a81d-fed6-444d-ad57-fee53edf7d92"],
+                       ["ja-9hSKK9vH.js", "03a4c116-8e70-4f02-9634-5d5ea0281d33"]]
+                    : [["en-CZvhHm-V.js", "a03ff173-3e89-4dde-882e-87300b32cebc"],
+                       ["en-BwDj8DEf.js", "4f0f3486-4fa8-435f-a94b-932b7913dc76"],
+                       ["en-BPFwhnqE.js", "60f4ffdc-f5cc-4b70-8bce-67d144e49331"],
+                       ["en-CFbtUrW8.js", "cc2df4ed-0bda-4c20-9612-36b8d0fe6ed5"]];
+
+                  let reactContainerMarkerPresent = false;
+                  for (const name of Object.getOwnPropertyNames(document)) {
+                    if (name.indexOf("__reactContainer$") === 0) { reactContainerMarkerPresent = true; break; }
+                  }
+
+                  const releaseDesc = Object.getOwnPropertyDescriptor(window, "SENTRY_RELEASE");
+                  const release = releaseDesc && own(releaseDesc, "value") ? releaseDesc.value : undefined;
+                  const lastDesc = Object.getOwnPropertyDescriptor(window, "_sentryDebugIdIdentifier");
+
+                  return JSON.stringify({
+                    entrySrc: entrySrc,
+                    sentryRelease: release && typeof release === "object" ? String(release.id) : "<none>",
+                    lastStartedModule: lastDesc && own(lastDesc, "value") ? String(lastDesc.value) : "<none>",
+                    debugIdCount: idValues.length,
+                    entryStarted: started("535f7c0f-29c1-4942-9c95-82b6ea1deb19"),
+                    viewAsStarted: started("de6ca102-e554-45de-9803-a9403866bbf3"),
+                    urlParseOwn: own(URL, "parse"),
+                    urlParseSrc: toSrc(URL.parse).slice(0, 80),
+                    errorIsErrorOwn: own(Error, "isError"),
+                    errorIsErrorNative: isNative(Error.isError),
+                    withResolversOwn: own(Promise, "withResolvers"),
+                    withResolversNative: isNative(Promise.withResolvers),
+                    ricNative: isNative(window.requestIdleCallback),
+                    hasGtCookie: /(?:^|;\s*)gt=/.test(document.cookie),
+                    guestActivatePresent: rtNames.some(n => n.endsWith("/1.1/guest/activate.json")),
+                    lang: lang === null ? "<null>" : lang,
+                    localeResource: locales.map(l => l[0] + "=" + rtHas(l[0])).join(","),
+                    localeStarted: locales.map(l => l[0] + "=" + started(l[1])).join(","),
+                    headerlessResource: rtHas("_headerless-DplpFx2F.js"),
+                    headerlessStarted: started("eab8de91-acf3-45ac-971d-ad085c543528"),
+                    webComponentResource: rtHas("web-DBVXEWWD.js"),
+                    webComponentStarted: started("42b1c795-2fed-4241-95ac-2d319d356d93"),
+                    rtCount: rtNames.length,
+                    resourceTimingBufferSaturated: rtNames.length >= 2000,
+                    reactContainerMarkerPresent: reactContainerMarkerPresent
+                  });
                 })()
                 """#
 
             webView.evaluateJavaScript(expression, in: nil, in: WKContentWorld.page) { result in
                 switch result {
                 case .success(let value):
-                    guard let diagnostics = value as? [String: Any] else {
-                        WebViewDiagnostics.log("clean resource timing read returned no dictionary")
+                    guard let json = value as? String else {
+                        WebViewDiagnostics.log("clean passive read returned no string")
                         return
                     }
-
-                    func diagnosticValue(_ key: String) -> String {
-                        switch diagnostics[key] {
-                        case let value as String:
-                            return String(WebViewDiagnostics.sanitized(value).prefix(200))
-                        case let value as NSNumber:
-                            return CFGetTypeID(value) == CFBooleanGetTypeID()
-                                ? (value.boolValue ? "true" : "false") : value.stringValue
-                        default:
-                            return "<unavailable>"
-                        }
-                    }
-
-                    let keys = [
-                        "rtCount", "resourceTimingBufferSaturated", "lang", "locales",
-                        "headerlessChunkPresent", "webComponentChunkPresent",
-                        "jetfuelLinkPresent", "jetfuelSheetPresent",
-                        "reactContainerMarkerPresent", "bootstrapPresent",
-                        "initializedPropertyPresent", "initializedTrue"
-                    ]
-                    WebViewDiagnostics.log(
-                        "clean resource timing read +10s "
-                            + keys.map { "\($0)=\(diagnosticValue($0))" }.joined(separator: " "))
+                    // Logged verbatim so it stays byte-comparable with the Safari baseline; the JSON
+                    // holds only booleans, counts, debug IDs, a script path and the lang attribute.
+                    WebViewDiagnostics.log("clean passive read +10s \(json)")
                 case .failure(let error):
                     WebViewDiagnostics.log(
-                        "clean resource timing read failed "
+                        "clean passive read failed "
                             + String(WebViewDiagnostics.sanitized(error.localizedDescription).prefix(500)))
                 }
             }
