@@ -480,6 +480,75 @@ struct WebViewConfigurations {
                     responsiveTokens: Array.from(dialog.classList).filter((token) => variantsOf(token).some(isResponsiveVariant))
                 };
             };
+            // Read-only cascade evidence for the dialog's radius and shadow: its full class list and
+            // data attributes, the document's stylesheet order, and every readable rule that matches
+            // the dialog and sets one of those properties, with the rule's enclosing conditions.
+            const cascadeProperties = ["border-radius", "border-top-left-radius", "box-shadow", "--tw-shadow"];
+            const cascadeFor = (dialog) => {
+                const sheets = Array.from(document.styleSheets);
+                const stylesheetOrder = sheets.map((sheet, index) => {
+                    const owner = sheet.ownerNode;
+                    let readable;
+                    try { readable = sheet.cssRules.length; } catch (error) { readable = "blocked"; }
+                    return {
+                        index: index,
+                        node: owner ? owner.tagName.toLowerCase() + (owner.parentNode ? " in " + owner.parentNode.nodeName.toLowerCase() : "") : null,
+                        xdeck: owner && owner.getAttribute ? owner.getAttribute("data-xdeck") : null,
+                        href: sheet.href ? sheet.href.split("/").pop().split("?")[0] : null,
+                        rules: readable
+                    };
+                });
+                const matchingRules = [];
+                const walk = (rules, sheetIndex, conditions) => {
+                    for (const rule of Array.from(rules)) {
+                        if (!rule.selectorText && rule.cssRules) {
+                            let condition;
+                            if (rule.media) {
+                                condition = { at: "@media " + rule.media.mediaText, active: matchMedia(rule.media.mediaText).matches };
+                            } else if (typeof rule.conditionText === "string") {
+                                let active = null;
+                                try { active = CSS.supports(rule.conditionText); } catch (error) {}
+                                condition = { at: "@supports " + rule.conditionText, active: active };
+                            } else if (typeof rule.name === "string") {
+                                condition = { at: "@layer " + rule.name, active: true };
+                            } else {
+                                condition = { at: "@" + rule.constructor.name, active: null };
+                            }
+                            walk(rule.cssRules, sheetIndex, conditions.concat([condition]));
+                            continue;
+                        }
+                        if (!rule.selectorText || !rule.style) continue;
+                        let matches = false;
+                        try { matches = dialog.matches(rule.selectorText); } catch (error) {}
+                        if (!matches) continue;
+                        const declarations = cascadeProperties
+                            .filter((name) => rule.style.getPropertyValue(name) !== "")
+                            .map((name) => name + ": " + rule.style.getPropertyValue(name).trim()
+                                + (rule.style.getPropertyPriority(name) ? " !important" : ""));
+                        if (declarations.length === 0) continue;
+                        matchingRules.push({
+                            sheetIndex: sheetIndex,
+                            selector: rule.selectorText.slice(0, 200),
+                            conditions: conditions,
+                            declarations: declarations
+                        });
+                    }
+                };
+                sheets.forEach((sheet, index) => {
+                    try { walk(sheet.cssRules, index, []); } catch (error) {}
+                });
+                const dataAttributes = {};
+                Array.from(dialog.attributes)
+                    .filter((attribute) => attribute.name.startsWith("data-"))
+                    .forEach((attribute) => { dataAttributes[attribute.name] = attribute.value.slice(0, 40); });
+                return {
+                    classList: Array.from(dialog.classList),
+                    dataAttributes: dataAttributes,
+                    inlineStyle: (dialog.getAttribute("style") || "").slice(0, 200),
+                    stylesheetOrder: stylesheetOrder,
+                    matchingRules: matchingRules.slice(0, 60)
+                };
+            };
             const onResize = () => {
                 const breakpoint = breakpointOf();
                 if (lastBreakpoint === null) {
@@ -501,7 +570,8 @@ struct WebViewConfigurations {
                         innerWidth: window.innerWidth, innerHeight: window.innerHeight,
                         visualViewport: viewport ? { width: viewport.width, height: viewport.height } : null
                     },
-                    dialog: dialog ? dialogState(dialog) : null
+                    dialog: dialog ? dialogState(dialog) : null,
+                    cascade: dialog ? cascadeFor(dialog) : null
                 }));
             };
             document.addEventListener("DOMContentLoaded", () => {
