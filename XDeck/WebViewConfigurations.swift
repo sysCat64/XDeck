@@ -14,6 +14,7 @@ struct WebViewConfigurations {
         case detectMediaOverlay(columnIndex: Int)
         case loginLayoutDiagnostic
         case loginResponsiveInventory
+        case loginDialogCompatibility
 
         var scriptContent: String {
             switch self {
@@ -28,6 +29,7 @@ struct WebViewConfigurations {
             case .detectMediaOverlay(let columnIndex): return WebViewConfigurations.detectMediaOverlay(columnIndex: columnIndex)
             case .loginLayoutDiagnostic: return WebViewConfigurations.loginLayoutDiagnostic
             case .loginResponsiveInventory: return WebViewConfigurations.loginResponsiveInventory
+            case .loginDialogCompatibility: return WebViewConfigurations.loginDialogCompatibility
             }
         }
 
@@ -35,7 +37,7 @@ struct WebViewConfigurations {
             switch self {
             case .findUserName, .findThemeColor, .clickForYouTab, .clickFollowingTab, .hideSideHeader, .hidePostArea, .hideAds:
                 return true
-            case .global, .detectMediaOverlay, .loginLayoutDiagnostic, .loginResponsiveInventory:
+            case .global, .detectMediaOverlay, .loginLayoutDiagnostic, .loginResponsiveInventory, .loginDialogCompatibility:
                 return false
             }
         }
@@ -562,6 +564,42 @@ struct WebViewConfigurations {
             schedule();
         })();
         """
+
+    // X's login dialog lays itself out with Tailwind "narrow:" utilities inside
+    // @media (width>=517px). WebKit 613 (macOS 12 WKWebView) cannot parse media-query range
+    // syntax, drops those rules, and the dialog ends up at the top-left. This re-declares the
+    // dialog's structural narrow: utilities with classic min-width syntax, keyed to the same
+    // classes on role="dialog". The <style> goes into <head>, where React hydration skips it.
+    private static let loginDialogCompatibility: String = #"""
+        (function () {
+            const css = String.raw`
+                @media (min-width: 517px) {
+                    [role="dialog"].narrow\:inset-0 { inset: 0; }
+                    [role="dialog"].narrow\:m-auto { margin: auto; }
+                    [role="dialog"].narrow\:h-fit { height: fit-content; }
+                    [role="dialog"].narrow\:w-\[700px\] { width: 700px; }
+                    [role="dialog"].narrow\:max-w-full { max-width: 100%; }
+                    [role="dialog"].narrow\:overflow-hidden { overflow: hidden; }
+                }
+            `;
+            const install = () => {
+                const style = document.createElement("style");
+                style.setAttribute("data-xdeck", "login-dialog-compatibility");
+                style.textContent = css;
+                document.head.appendChild(style);
+            };
+            if (document.head) {
+                install();
+                return;
+            }
+            const observer = new MutationObserver(() => {
+                if (!document.head) return;
+                observer.disconnect();
+                install();
+            });
+            observer.observe(document, { childList: true, subtree: true });
+        })();
+        """#
 
     private static func wrapOnLoad(contents: [String]) -> String {
         return """
