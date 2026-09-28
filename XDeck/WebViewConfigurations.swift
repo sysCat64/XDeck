@@ -233,10 +233,19 @@ struct WebViewConfigurations {
                     rect: rect(element),
                     style: {
                         display: style.display, position: style.position,
-                        width: style.width, maxWidth: style.maxWidth,
+                        width: style.width, minWidth: style.minWidth, maxWidth: style.maxWidth,
+                        height: style.height, minHeight: style.minHeight, maxHeight: style.maxHeight,
                         marginLeft: style.marginLeft, marginRight: style.marginRight,
+                        paddingLeft: style.paddingLeft, paddingRight: style.paddingRight,
+                        boxSizing: style.boxSizing,
+                        flexDirection: style.flexDirection, flexGrow: style.flexGrow,
+                        flexShrink: style.flexShrink, flexBasis: style.flexBasis,
                         justifyContent: style.justifyContent, alignItems: style.alignItems,
-                        transform: style.transform
+                        columnGap: style.columnGap,
+                        gridTemplateColumns: style.gridTemplateColumns,
+                        overflow: style.overflow,
+                        transform: style.transform,
+                        backgroundColor: style.backgroundColor
                     }
                 };
             };
@@ -262,12 +271,55 @@ struct WebViewConfigurations {
                     return;
                 }
                 reported = true;
-                const ancestors = [];
-                for (let element = target.parentElement, depth = 0;
-                     element && element !== document.documentElement && depth < 8;
-                     element = element.parentElement, depth += 1) {
-                    ancestors.push(describe(element));
+                // Full ancestor chain, from the target's parent up to and including <html>.
+                const chain = [];
+                for (let element = target.parentElement; element; element = element.parentElement) {
+                    chain.push(element);
                 }
+                const ancestors = chain.map((element, depth) => Object.assign({ depth: depth }, describe(element)));
+                // Every point on the way out where the rendered width changes by more than 1px.
+                const widthSteps = [];
+                let previousWidth = target.getBoundingClientRect().width;
+                chain.forEach((element, depth) => {
+                    const width = element.getBoundingClientRect().width;
+                    if (Math.abs(width - previousWidth) > 1) {
+                        widthSteps.push({
+                            depth: depth, tag: element.tagName.toLowerCase(),
+                            role: element.getAttribute("role"), testid: element.getAttribute("data-testid"),
+                            fromWidth: Math.round(previousWidth * 100) / 100, toWidth: Math.round(width * 100) / 100
+                        });
+                    }
+                    previousWidth = width;
+                });
+                // The outermost ancestor still narrower than the viewport, its direct parent, and the
+                // parent's children: whatever takes or reserves the remaining width is among them.
+                let regionIndex = -1;
+                chain.forEach((element, depth) => {
+                    if (element.getBoundingClientRect().width < window.innerWidth - 1) regionIndex = depth;
+                });
+                const region = regionIndex >= 0 ? chain[regionIndex] : null;
+                const regionParent = region ? region.parentElement : null;
+                const sibling = (element) => {
+                    const style = getComputedStyle(element);
+                    return {
+                        isRegion: element === region,
+                        tag: element.tagName.toLowerCase(),
+                        role: element.getAttribute("role"),
+                        testid: element.getAttribute("data-testid"),
+                        aria: (element.getAttribute("aria-label") || "").slice(0, 40) || null,
+                        rect: rect(element),
+                        display: style.display, position: style.position, width: style.width,
+                        flexGrow: style.flexGrow, flexShrink: style.flexShrink, flexBasis: style.flexBasis,
+                        backgroundColor: style.backgroundColor
+                    };
+                };
+                const narrowRegion = region ? {
+                    depth: regionIndex,
+                    element: describe(region),
+                    parent: regionParent ? describe(regionParent) : null,
+                    parentChildCount: regionParent ? regionParent.children.length : 0,
+                    parentChildren: regionParent ? Array.from(regionParent.children).slice(0, 12).map(sibling) : []
+                } : null;
                 const found = controls();
                 const summarize = (element) => ({
                     tag: element.tagName.toLowerCase(),
@@ -309,6 +361,8 @@ struct WebViewConfigurations {
                         firstControls: found.inputs.concat(found.buttons).slice(0, 6).map(summarize)
                     },
                     target: Object.assign(describe(target), { kind: target.tagName.toLowerCase() === "input" ? "input" : "button" }),
+                    widthSteps: widthSteps,
+                    narrowRegion: narrowRegion,
                     ancestors: ancestors
                 }));
             };
