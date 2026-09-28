@@ -74,6 +74,7 @@ struct WebView: NSViewRepresentable {
     var scriptExecutionToken: Int = 0
     var refreshSwitch: Bool = false
     var configuration: WKWebViewConfiguration? = nil
+    var isCleanResourceTimingDiagnostic: Bool = false
 
     func makeNSView(context: Context) -> WKWebView {
         let webView: WKWebView
@@ -125,6 +126,7 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
     var refreshSwitch: Bool
     var lastHandledScriptToken: Int
     private var didRunTLADuplicateImportProbe = false
+    private var didScheduleCleanResourceTimingRead = false
 
     init(owner: WebView) {
         self.owner = owner
@@ -132,7 +134,9 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
         self.refreshSwitch = false
         self.lastHandledScriptToken = owner.scriptExecutionToken
         super.init()
-        owner.configuration?.userContentController.add(self, name: WebViewConfigurations.handlerName)
+        if !owner.isCleanResourceTimingDiagnostic {
+            owner.configuration?.userContentController.add(self, name: WebViewConfigurations.handlerName)
+        }
     }
 
     // MARK: WKNavigationDelegate
@@ -149,6 +153,10 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         owner.isLoading = false
         WebViewDiagnostics.log("didFinish location=\(WebViewDiagnostics.location(for: webView.url))")
+        if owner.isCleanResourceTimingDiagnostic {
+            scheduleCleanResourceTimingRead(for: webView)
+            return
+        }
         let superviewBounds = webView.superview.map { "\($0.bounds.width)x\($0.bounds.height)" } ?? "<unavailable>"
         let contentViewBounds: String
         if let contentView = webView.window?.contentView {
@@ -972,6 +980,107 @@ class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessage
                 case .failure(let error):
                     WebViewDiagnostics.log(
                         "native page-world probe failed "
+                            + String(WebViewDiagnostics.sanitized(error.localizedDescription).prefix(500)))
+                }
+            }
+        }
+    }
+
+    private func scheduleCleanResourceTimingRead(for webView: WKWebView) {
+        guard !didScheduleCleanResourceTimingRead, isLoginFlowURL(webView.url) else { return }
+        didScheduleCleanResourceTimingRead = true
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak webView] in
+            guard let webView = webView else { return }
+
+            let expression = #"""
+                (() => {
+                    const lang = document.documentElement.getAttribute("lang");
+                    const resourceNames = performance.getEntriesByType("resource").map(function (entry) {
+                        return String(entry.name).split("?")[0];
+                    });
+                    const hasResource = function (file) {
+                        return resourceNames.some(function (name) { return name.endsWith("/" + file); });
+                    };
+                    const localeChunks = String(lang || "").toLowerCase().indexOf("ja") === 0
+                        ? ["ja-D0XYHMW4.js", "ja-DfUnl03v.js", "ja-CfgzxN8m.js", "ja-9hSKK9vH.js"]
+                        : ["en-CZvhHm-V.js", "en-BwDj8DEf.js", "en-BPFwhnqE.js", "en-CFbtUrW8.js"];
+                    const locales = localeChunks.map(function (file) {
+                        return file + "=" + hasResource(file);
+                    }).join(",");
+
+                    const jetfuelLinks = Array.prototype.filter.call(
+                        document.getElementsByTagName("link"),
+                        function (link) { return String(link.href).indexOf("use-jetfuel-dev-BGQfye3R.css") !== -1; });
+
+                    let reactContainerMarkerPresent = false;
+                    const documentPropertyNames = Object.getOwnPropertyNames(document);
+                    for (let index = 0; index < documentPropertyNames.length; index += 1) {
+                        if (documentPropertyNames[index].indexOf("__reactContainer$") === 0) {
+                            reactContainerMarkerPresent = true;
+                            break;
+                        }
+                    }
+
+                    const bootstrapDescriptor = Object.getOwnPropertyDescriptor(window, "$_TSR");
+                    const bootstrap = bootstrapDescriptor
+                        && Object.prototype.hasOwnProperty.call(bootstrapDescriptor, "value")
+                        ? bootstrapDescriptor.value : undefined;
+                    const initializedDescriptor = bootstrap !== null && typeof bootstrap === "object"
+                        ? Object.getOwnPropertyDescriptor(bootstrap, "initialized") : undefined;
+
+                    return {
+                        rtCount: resourceNames.length,
+                        resourceTimingBufferSaturated: resourceNames.length >= 2000,
+                        lang: lang === null ? "<null>" : lang,
+                        locales: locales,
+                        headerlessChunkPresent: hasResource("_headerless-DplpFx2F.js"),
+                        webComponentChunkPresent: hasResource("web-DBVXEWWD.js"),
+                        jetfuelLinkPresent: jetfuelLinks.length > 0,
+                        jetfuelSheetPresent: jetfuelLinks.some(function (link) { return link.sheet !== null; }),
+                        reactContainerMarkerPresent: reactContainerMarkerPresent,
+                        bootstrapPresent: bootstrapDescriptor !== undefined,
+                        initializedPropertyPresent: initializedDescriptor !== undefined,
+                        initializedTrue: initializedDescriptor !== undefined
+                            && Object.prototype.hasOwnProperty.call(initializedDescriptor, "value")
+                            && initializedDescriptor.value === true
+                    };
+                })()
+                """#
+
+            webView.evaluateJavaScript(expression, in: nil, in: WKContentWorld.page) { result in
+                switch result {
+                case .success(let value):
+                    guard let diagnostics = value as? [String: Any] else {
+                        WebViewDiagnostics.log("clean resource timing read returned no dictionary")
+                        return
+                    }
+
+                    func diagnosticValue(_ key: String) -> String {
+                        switch diagnostics[key] {
+                        case let value as String:
+                            return String(WebViewDiagnostics.sanitized(value).prefix(200))
+                        case let value as NSNumber:
+                            return CFGetTypeID(value) == CFBooleanGetTypeID()
+                                ? (value.boolValue ? "true" : "false") : value.stringValue
+                        default:
+                            return "<unavailable>"
+                        }
+                    }
+
+                    let keys = [
+                        "rtCount", "resourceTimingBufferSaturated", "lang", "locales",
+                        "headerlessChunkPresent", "webComponentChunkPresent",
+                        "jetfuelLinkPresent", "jetfuelSheetPresent",
+                        "reactContainerMarkerPresent", "bootstrapPresent",
+                        "initializedPropertyPresent", "initializedTrue"
+                    ]
+                    WebViewDiagnostics.log(
+                        "clean resource timing read +10s "
+                            + keys.map { "\($0)=\(diagnosticValue($0))" }.joined(separator: " "))
+                case .failure(let error):
+                    WebViewDiagnostics.log(
+                        "clean resource timing read failed "
                             + String(WebViewDiagnostics.sanitized(error.localizedDescription).prefix(500)))
                 }
             }

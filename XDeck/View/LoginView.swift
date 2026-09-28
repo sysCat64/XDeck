@@ -19,6 +19,16 @@ struct LoginView: View {
         return configuration
     }
 
+    private var cleanResourceTimingConfiguration: WKWebViewConfiguration {
+        let configuration = WKWebViewConfiguration()
+        let script = WKUserScript(
+            source: "performance.setResourceTimingBufferSize(2000);",
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true)
+        configuration.userContentController.addUserScript(script)
+        return configuration
+    }
+
     private static let runtimeDiagnosticsScript = #"""
         (function() {
             function safeLocation(value) {
@@ -866,7 +876,8 @@ struct LoginView: View {
                 isLoading: $isLoading, url: $url, alertMessage: $alertMessage,
                 messageFromWebView: $loginViewMessage,
                 scriptExecutionRequest: scriptExecutionRequest,
-                configuration: diagnosticConfiguration)
+                configuration: cleanResourceTimingConfiguration,
+                isCleanResourceTimingDiagnostic: true)
         }
         .padding()
         .onChange(of: alertMessage) { message in
