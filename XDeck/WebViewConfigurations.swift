@@ -12,7 +12,6 @@ struct WebViewConfigurations {
         case hideSideHeader
         case hideAds
         case detectMediaOverlay(columnIndex: Int)
-        case startupTiming
 
         var scriptContent: String {
             switch self {
@@ -25,7 +24,6 @@ struct WebViewConfigurations {
             case .hideSideHeader: return WebViewConfigurations.hideSideHeader
             case .hideAds: return WebViewConfigurations.hideAds
             case .detectMediaOverlay(let columnIndex): return WebViewConfigurations.detectMediaOverlay(columnIndex: columnIndex)
-            case .startupTiming: return WebViewConfigurations.startupTiming
             }
         }
 
@@ -33,15 +31,13 @@ struct WebViewConfigurations {
             switch self {
             case .findUserName, .findThemeColor, .clickForYouTab, .clickFollowingTab, .hideSideHeader, .hidePostArea, .hideAds:
                 return true
-            case .global, .detectMediaOverlay, .startupTiming:
+            case .global, .detectMediaOverlay:
                 return false
             }
         }
     }
 
     static let handlerName = "handler";
-    // Reserved prefix for temporary startup-timing markers; normal XDeck messages are JSON objects.
-    static let startupTimingMessagePrefix = "__xdeckStartupTiming:"
 
     static func makeConfiguration(onLoadScripts: [OnLoadScript]) -> WKWebViewConfiguration {
         let script = [
@@ -185,122 +181,19 @@ struct WebViewConfigurations {
         document.querySelector('head').appendChild(style);
         """
 
+    // X's home timeline tabs: index 0 is For You, index 1 is Following.
+    private static let homeTimelineTabSelector = "[data-testid='primaryColumn'] [role='tablist'] div[role='tab']"
+
     private static let clickForYouTab: String = """
-        \(startupTimingMarker("tabWaitRegistered:index=0"))
-        waitForElement("div[role='tab']", 0, (element) => {
-            \(startupTimingMarker("tabClick"))
+        waitForElement("\(homeTimelineTabSelector)", 0, (element) => {
             element.click();
         });
         """
 
     private static let clickFollowingTab: String = """
-        \(startupTimingMarker("tabWaitRegistered:index=1"))
-        waitForElement("div[role='tab']", 1, (element) => {
-            \(startupTimingMarker("tabClick"))
+        waitForElement("\(homeTimelineTabSelector)", 1, (element) => {
             element.click();
         });
-        """
-
-    // Temporary startup-timing diagnostic. Only reports when the .startupTiming script enabled it.
-    private static func startupTimingMarker(_ event: String) -> String {
-        return """
-            if (window.__xdeckStartupTimingEnabled === true) {
-                webkit.messageHandlers.\(Self.handlerName).postMessage("\(Self.startupTimingMessagePrefix)\(event)");
-            }
-            """
-    }
-
-    // Temporary startup-timing diagnostic: passively reports when the first timeline cell exists,
-    // then stops observing. It never modifies the DOM.
-    private static let startupTiming: String = """
-        window.__xdeckStartupTimingEnabled = true;
-        (function () {
-            const post = (event) => {
-                webkit.messageHandlers.\(Self.handlerName).postMessage("\(Self.startupTimingMessagePrefix)" + event);
-            };
-            // Passive snapshot of home-tab markup: the selector XDeck clicks, and every role=tab element.
-            const tabSnapshot = () => {
-                const describe = (element) => ({
-                    tag: element.tagName.toLowerCase(),
-                    href: element.getAttribute("href"),
-                    selected: element.getAttribute("aria-selected"),
-                    text: (element.textContent || "").trim().slice(0, 40)
-                });
-                const homeTabs = Array.from(document.querySelectorAll("a[href='/home'][role='tab']"));
-                const roleTabs = Array.from(document.querySelectorAll('[role="tab"]'));
-                return JSON.stringify({
-                    homeTabCount: homeTabs.length,
-                    homeTabs: homeTabs.slice(0, 6).map(describe),
-                    roleTabCount: roleTabs.length,
-                    roleTabs: roleTabs.slice(0, 8).map(describe)
-                });
-            };
-            // Passive snapshot of where the role=tab elements sit, to choose a scoped tab selector.
-            const tabStructure = () => {
-                const node = (element) => ({
-                    tag: element.tagName.toLowerCase(),
-                    role: element.getAttribute("role"),
-                    testid: element.getAttribute("data-testid"),
-                    aria: (element.getAttribute("aria-label") || "").slice(0, 40) || null,
-                    children: element.children.length
-                });
-                const count = (selector) => document.querySelectorAll(selector).length;
-                const tablists = Array.from(document.querySelectorAll('[role="tablist"]'));
-                const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
-                return JSON.stringify({
-                    tablistCount: tablists.length,
-                    tablists: tablists.slice(0, 4).map((list) => Object.assign(node(list), {
-                        tabCount: list.querySelectorAll('[role="tab"]').length,
-                        directTabCount: Array.from(list.children).filter((child) => child.getAttribute("role") === "tab").length
-                    })),
-                    tabs: tabs.slice(0, 4).map((tab) => {
-                        const ancestors = [];
-                        for (let parent = tab.parentElement, depth = 0;
-                             parent && parent !== document.body && depth < 8;
-                             parent = parent.parentElement, depth += 1) {
-                            ancestors.push(node(parent));
-                        }
-                        return {
-                            self: node(tab),
-                            inTablist: tab.closest('[role="tablist"]') !== null,
-                            inMain: tab.closest("main") !== null,
-                            ancestors: ancestors
-                        };
-                    }),
-                    candidates: {
-                        "div[role=tab]": count('div[role="tab"]'),
-                        "[role=tablist] div[role=tab]": count('[role="tablist"] div[role="tab"]'),
-                        "[role=tablist] > div[role=tab]": count('[role="tablist"] > div[role="tab"]'),
-                        "main [role=tablist] div[role=tab]": count('main [role="tablist"] div[role="tab"]'),
-                        "[data-testid=primaryColumn] [role=tablist] div[role=tab]": count('[data-testid="primaryColumn"] [role="tablist"] div[role="tab"]')
-                    }
-                });
-            };
-            const whenPresent = (selector, callback) => {
-                if (document.querySelector(selector)) {
-                    callback();
-                    return;
-                }
-                const observer = new MutationObserver(() => {
-                    if (!document.querySelector(selector)) return;
-                    observer.disconnect();
-                    callback();
-                });
-                observer.observe(document, { childList: true, subtree: true });
-            };
-
-            document.addEventListener("DOMContentLoaded", () => {
-                post("domContentLoaded:" + tabSnapshot());
-            });
-            whenPresent('[role="tab"]', () => {
-                post("tabsAppeared:" + tabSnapshot());
-            });
-            whenPresent('div[data-testid="cellInnerDiv"]', () => {
-                post("firstCell");
-                post("firstCellTabs:" + tabSnapshot());
-                post("tabStructure:" + tabStructure());
-            });
-        })();
         """
 
     private static func wrapOnLoad(contents: [String]) -> String {

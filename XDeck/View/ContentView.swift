@@ -115,8 +115,7 @@ struct ContentView: View {
         let width = isLeftMostXColumn ? columnWidth + Self.sideHeaderWidth : columnWidth
 
         let baseConfiguration: [WebViewConfigurations.OnLoadScript] = {
-            // .startupTiming is a temporary diagnostic; it runs first so it observes the whole load.
-            var scripts: [WebViewConfigurations.OnLoadScript] = [.startupTiming, .global, .detectMediaOverlay(columnIndex: columnIndex)]
+            var scripts: [WebViewConfigurations.OnLoadScript] = [.global, .detectMediaOverlay(columnIndex: columnIndex)]
             if isLeftMostXColumn {
                 scripts.append(.findThemeColor)
             } else if column.isXColumn {
@@ -127,7 +126,6 @@ struct ContentView: View {
             }
             return scripts
         }()
-        let startupTimingLabel = "column=\(columnIndex) type=\(column.type.rawValue)"
 
         switch column.type {
         case .forYou:
@@ -138,8 +136,7 @@ struct ContentView: View {
                 scriptExecutionToken: scriptExecutionToken,
                 refreshSwitch: refreshSwitch,
                 configuration: WebViewConfigurations.makeConfiguration(
-                    onLoadScripts: baseConfiguration + [.clickForYouTab]),
-                diagnosticLabel: startupTimingLabel
+                    onLoadScripts: baseConfiguration + [.clickForYouTab])
             ).frame(width: width)
         case .following:
             WebView(
@@ -149,8 +146,7 @@ struct ContentView: View {
                 scriptExecutionToken: scriptExecutionToken,
                 refreshSwitch: refreshSwitch,
                 configuration: WebViewConfigurations.makeConfiguration(
-                    onLoadScripts: baseConfiguration + [.clickFollowingTab]),
-                diagnosticLabel: startupTimingLabel
+                    onLoadScripts: baseConfiguration + [.clickFollowingTab])
             ).frame(width: width)
         case .notifications:
             WebView(
@@ -161,8 +157,7 @@ struct ContentView: View {
                 scriptExecutionToken: scriptExecutionToken,
                 refreshSwitch: refreshSwitch,
                 configuration: WebViewConfigurations.makeConfiguration(
-                    onLoadScripts: baseConfiguration),
-                diagnosticLabel: startupTimingLabel
+                    onLoadScripts: baseConfiguration)
             ).frame(width: width)
         case .profile:
             if let url = Binding(profileUrl) {
@@ -173,8 +168,7 @@ struct ContentView: View {
                     scriptExecutionToken: column.isXColumn ? scriptExecutionToken : 0,
                     refreshSwitch: refreshSwitch,
                     configuration: WebViewConfigurations.makeConfiguration(
-                        onLoadScripts: baseConfiguration),
-                    diagnosticLabel: startupTimingLabel
+                        onLoadScripts: baseConfiguration)
                 ).frame(width: width)
             }
         case .custom:
@@ -186,8 +180,7 @@ struct ContentView: View {
                     scriptExecutionToken: scriptExecutionToken,
                     refreshSwitch: refreshSwitch,
                     configuration: WebViewConfigurations.makeConfiguration(
-                        onLoadScripts: baseConfiguration),
-                    diagnosticLabel: startupTimingLabel
+                        onLoadScripts: baseConfiguration)
                 ).frame(width: width)
             }
         }
