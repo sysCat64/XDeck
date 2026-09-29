@@ -385,7 +385,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.morishin.XDeck;
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.syscat64.XDeckPinos;
 				PRODUCT_NAME = "XDeck Pinos";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -413,7 +413,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = me.morishin.XDeck;
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.syscat64.XDeckPinos;
 				PRODUCT_NAME = "XDeck Pinos";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
