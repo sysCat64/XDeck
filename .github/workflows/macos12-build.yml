@@ -58,7 +58,6 @@ jobs:
             -scheme XDeck \
             -configuration Debug \
             -destination "generic/platform=macOS" \
-            CODE_SIGNING_ALLOWED=NO \
             build
 
       - name: Verify app and package test artifact
