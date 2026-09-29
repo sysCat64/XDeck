@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - macos12
+      - pinos-independence
 
 permissions:
   contents: read
