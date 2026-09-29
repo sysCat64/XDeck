@@ -73,13 +73,15 @@ struct UpdateButton: View {
         }
     }
 
-    // Returns "MAJOR.MINOR.PATCH" only for a XDeck Pinos release tag URL
-    // (".../releases/tag/pinos-vMAJOR.MINOR.PATCH" on the repository's host); nil otherwise.
+    // Returns "MAJOR.MINOR.PATCH" only for a XDeck Pinos release tag URL, i.e. exactly
+    // "<AppConfig.repositoryUrl>/releases/tag/pinos-vMAJOR.MINOR.PATCH"; nil otherwise.
     static func extractVersion(from url: URL) -> String? {
+        let repositoryPath = NSRegularExpression.escapedPattern(for: AppConfig.repositoryUrl.path)
         let prefix = NSRegularExpression.escapedPattern(for: AppConfig.releaseTagPrefix)
         let path = url.path
-        guard url.host == AppConfig.repositoryUrl.host,
-              let regex = try? NSRegularExpression(pattern: "/releases/tag/\(prefix)([0-9]+\\.[0-9]+\\.[0-9]+)$"),
+        guard url.scheme == AppConfig.repositoryUrl.scheme,
+              url.host == AppConfig.repositoryUrl.host,
+              let regex = try? NSRegularExpression(pattern: "^\(repositoryPath)/releases/tag/\(prefix)([0-9]+\\.[0-9]+\\.[0-9]+)$"),
               let match = regex.firstMatch(in: path, range: NSRange(location: 0, length: path.utf16.count)),
               let range = Range(match.range(at: 1), in: path) else {
             return nil
