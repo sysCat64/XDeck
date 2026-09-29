@@ -41,7 +41,7 @@
 		5B5F42242AAA368E0031658B /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 		5B5F42272AAAB0700031658B /* settings.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = settings.json; sourceTree = "<group>"; };
 		5B5F42292AAAB0870031658B /* schema.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = schema.json; sourceTree = "<group>"; };
-		5B90B8BF2A8E6D7300185EAA /* XDeck.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = XDeck.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		5B90B8BF2A8E6D7300185EAA /* XDeck Pinos.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "XDeck Pinos.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		5B90B8C22A8E6D7300185EAA /* XDeckApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XDeckApp.swift; sourceTree = "<group>"; };
 		5B90B8C42A8E6D7300185EAA /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		5B90B8C62A8E6D7400185EAA /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -111,7 +111,7 @@
 		5B90B8C02A8E6D7300185EAA /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				5B90B8BF2A8E6D7300185EAA /* XDeck.app */,
+				5B90B8BF2A8E6D7300185EAA /* XDeck Pinos.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -164,7 +164,7 @@
 			);
 			name = XDeck;
 			productName = XDeck;
-			productReference = 5B90B8BF2A8E6D7300185EAA /* XDeck.app */;
+			productReference = 5B90B8BF2A8E6D7300185EAA /* XDeck Pinos.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -386,7 +386,7 @@
 					"@executable_path/../Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = me.morishin.XDeck;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = "XDeck Pinos";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 			};
@@ -414,7 +414,7 @@
 					"@executable_path/../Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = me.morishin.XDeck;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = "XDeck Pinos";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 			};

@@ -15,7 +15,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "5B90B8BE2A8E6D7300185EAA"
-               BuildableName = "XDeck.app"
+               BuildableName = "XDeck Pinos.app"
                BlueprintName = "XDeck"
                ReferencedContainer = "container:XDeck.xcodeproj">
             </BuildableReference>
@@ -44,7 +44,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "5B90B8BE2A8E6D7300185EAA"
-            BuildableName = "XDeck.app"
+            BuildableName = "XDeck Pinos.app"
             BlueprintName = "XDeck"
             ReferencedContainer = "container:XDeck.xcodeproj">
          </BuildableReference>
@@ -61,7 +61,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "5B90B8BE2A8E6D7300185EAA"
-            BuildableName = "XDeck.app"
+            BuildableName = "XDeck Pinos.app"
             BlueprintName = "XDeck"
             ReferencedContainer = "container:XDeck.xcodeproj">
          </BuildableReference>

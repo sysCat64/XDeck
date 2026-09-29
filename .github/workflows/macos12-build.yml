@@ -63,13 +63,18 @@ jobs:
       - name: Verify app and package test artifact
         run: |
           APP_PATH="$(find "$HOME/Library/Developer/Xcode/DerivedData" \
-            -type d -path '*/Build/Products/Debug/XDeck.app' -print -quit)"
+            -type d -path '*/Build/Products/Debug/XDeck Pinos.app' -print -quit)"
           if [ -z "$APP_PATH" ]; then
-            echo "Could not find the built Debug/XDeck.app bundle"
+            echo "Could not find the built Debug/XDeck Pinos.app bundle"
             exit 1
           fi
 
-          EXECUTABLE="$APP_PATH/Contents/MacOS/XDeck"
+          BUNDLE_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$APP_PATH/Contents/Info.plist")"
+          BUNDLE_EXECUTABLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP_PATH/Contents/Info.plist")"
+          echo "App bundle: $(basename "$APP_PATH")"
+          echo "CFBundleName: $BUNDLE_NAME"
+          echo "CFBundleExecutable: $BUNDLE_EXECUTABLE"
+          EXECUTABLE="$APP_PATH/Contents/MacOS/$BUNDLE_EXECUTABLE"
           if [ ! -f "$EXECUTABLE" ]; then
             echo "App executable not found: $EXECUTABLE"
             exit 1
@@ -120,11 +125,11 @@ jobs:
           done
 
           ditto -c -k --sequesterRsrc --keepParent \
-            "$APP_PATH" "$RUNNER_TEMP/XDeck-macOS12-debug.zip"
+            "$APP_PATH" "$RUNNER_TEMP/XDeck-Pinos-macOS12-debug.zip"
 
       - name: Upload test artifact
         uses: actions/upload-artifact@v7
         with:
-          name: XDeck-macOS12-debug
-          path: ${{ runner.temp }}/XDeck-macOS12-debug.zip
+          name: XDeck-Pinos-macOS12-debug
+          path: ${{ runner.temp }}/XDeck-Pinos-macOS12-debug.zip
           if-no-files-found: error
