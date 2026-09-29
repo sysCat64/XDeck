@@ -37,7 +37,6 @@ xcodebuild \
   -scheme XDeck \
   -configuration Debug \
   -destination "generic/platform=macOS" \
-  MACOSX_DEPLOYMENT_TARGET=12.0 \
   CODE_SIGNING_ALLOWED=NO \
   build
 ```
