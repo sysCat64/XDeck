@@ -24,13 +24,13 @@ struct UpdateButton: View {
                     HStack {
                         Text("v\(currentVersion) (v\(latestVersion) is available)")
                         Button("Update", action: {
-                            openURL(URL(string: "https://github.com/morishin/XDeck/releases/latest")!)
+                            openURL(AppConfig.latestReleaseUrl)
                         })
                         .buttonStyle(.bordered)
                     }
                 } else {
                     Button("v\(currentVersion)" + (Self.isDebug ? " (dev)" : ""), action: {
-                        openURL(URL(string: "https://github.com/morishin/XDeck/releases/tag/\(currentVersion)")!)
+                        openURL(AppConfig.releaseUrl(forVersion: currentVersion))
                     }).buttonStyle(.plain)
                 }
             }
@@ -52,15 +52,13 @@ struct UpdateButton: View {
     }
 
     func checkForUpdate() async {
-        guard let url = URL(string: "https://github.com/morishin/XDeck/releases/latest") else { return }
-
-        var request = URLRequest(url: url)
+        var request = URLRequest(url: AppConfig.latestReleaseUrl)
         request.httpMethod = "HEAD"
 
         do {
             let (_, response) = try await URLSession.shared.data(for: request)
-            if let latestReleaseUrlString = response.url?.absoluteString {
-                let latestVersion = extractVersion(from: latestReleaseUrlString)
+            // Without a Pinos release, "latest" doesn't end on a pinos-v tag URL: no update.
+            if let latestVersion = response.url.flatMap(Self.extractVersion(from:)) {
                 let currentVersion = Self.currentVersion ?? "0.0"
                 if currentVersion.compare(latestVersion, options: .numeric) == .orderedAscending {
                     DispatchQueue.main.async {
@@ -75,13 +73,18 @@ struct UpdateButton: View {
         }
     }
 
-    func extractVersion(from url: String) -> String {
-        guard let regex = try? NSRegularExpression(pattern: "/tag/([0-9]+\\.[0-9]+)"),
-              let match = regex.firstMatch(in: url, range: NSRange(location: 0, length: url.utf16.count)),
-              let range = Range(match.range(at: 1), in: url) else {
-            return "0.0"
+    // Returns "MAJOR.MINOR.PATCH" only for a XDeck Pinos release tag URL
+    // (".../releases/tag/pinos-vMAJOR.MINOR.PATCH" on the repository's host); nil otherwise.
+    static func extractVersion(from url: URL) -> String? {
+        let prefix = NSRegularExpression.escapedPattern(for: AppConfig.releaseTagPrefix)
+        let path = url.path
+        guard url.host == AppConfig.repositoryUrl.host,
+              let regex = try? NSRegularExpression(pattern: "/releases/tag/\(prefix)([0-9]+\\.[0-9]+\\.[0-9]+)$"),
+              let match = regex.firstMatch(in: path, range: NSRange(location: 0, length: path.utf16.count)),
+              let range = Range(match.range(at: 1), in: path) else {
+            return nil
         }
-        return String(url[range])
+        return String(path[range])
     }
 }
 
