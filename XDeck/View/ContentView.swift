@@ -322,6 +322,7 @@ struct ContentView: View {
                                                 GitHubIcon()
                                                     .foregroundColor(Self.textColor(for: backgroundColor))
                                                     .frame(width: 20, height: 20)
+                                                    .contentShape(Rectangle())
                                             }
                                             .buttonStyle(.plain)
                                             .onHover { inside in
