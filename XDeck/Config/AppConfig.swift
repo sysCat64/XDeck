@@ -40,7 +40,7 @@ struct AppConfig: Decodable {
 
     static let configDirectoryUrl = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".config")
-        .appendingPathComponent("XDeck")
+        .appendingPathComponent("XDeckPinos")
     private static let configFileUrl = configDirectoryUrl.appendingPathComponent("settings.json")
     private static let configSchemaFileUrl = configDirectoryUrl.appendingPathComponent("schema.json")
     private static func createConfigFileIfNotExist() throws {
