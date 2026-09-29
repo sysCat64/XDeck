@@ -317,7 +317,7 @@ struct ContentView: View {
                                     HStack(spacing: 24) {
                                         HStack(spacing: 8) {
                                             Button {
-                                                openURL(URL(string: "https://github.com/morishin/XDeck")!)
+                                                openURL(AppConfig.repositoryUrl)
                                             } label: {
                                                 GitHubIcon()
                                                     .foregroundColor(Self.textColor(for: backgroundColor))
@@ -354,25 +354,6 @@ struct ContentView: View {
                                                     : WebViewConfigurations.showAds
                                                 scriptExecutionToken += 1
                                             }
-                                        Button {
-                                            openURL(URL(string: "https://github.com/sponsors/morishin?frequency=one-time")!)
-                                        } label: {
-                                            Label {
-                                                Text("Buy me a coffee")
-                                                    .foregroundStyle(Color(nsColor: .textColor))
-                                            } icon: {
-                                                Image(systemName: "cup.and.saucer.fill")
-                                                    .frame(width: 16, height: 16)
-                                            }
-                                        }
-                                        .buttonStyle(.bordered)
-                                        .onHover { inside in
-                                            if inside {
-                                                NSCursor.pointingHand.push()
-                                            } else {
-                                                NSCursor.pop()
-                                            }
-                                        }
                                         Text("⌘+ Zoom In")
                                             .foregroundColor(Self.textColor(for: backgroundColor))
                                         Text("⌘- Zoom out")
