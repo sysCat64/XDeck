@@ -38,7 +38,6 @@ jobs:
 
     env:
       CONFIGURATION: ${{ matrix.configuration }}
-      DERIVED_DATA: ${{ runner.temp }}/DerivedData
       ZIP_NAME: XDeck-Pinos-macOS12-${{ matrix.suffix }}.zip
 
     steps:
@@ -85,19 +84,19 @@ jobs:
             -scheme XDeck \
             -configuration "$CONFIGURATION" \
             -destination "generic/platform=macOS" \
-            -derivedDataPath "$DERIVED_DATA" \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             build
 
       - name: Verify XDeck Pinos.app
         run: |
           scripts/verify-app.sh \
-            "$DERIVED_DATA/Build/Products/$CONFIGURATION/XDeck Pinos.app" \
+            "$RUNNER_TEMP/DerivedData/Build/Products/$CONFIGURATION/XDeck Pinos.app" \
             "$CONFIGURATION"
 
       - name: Package ${{ matrix.configuration }} test artifact
         run: |
           ditto -c -k --sequesterRsrc --keepParent \
-            "$DERIVED_DATA/Build/Products/$CONFIGURATION/XDeck Pinos.app" \
+            "$RUNNER_TEMP/DerivedData/Build/Products/$CONFIGURATION/XDeck Pinos.app" \
             "$RUNNER_TEMP/$ZIP_NAME"
 
       - name: Upload ${{ matrix.configuration }} test artifact
