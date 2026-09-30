@@ -16,17 +16,14 @@
     {
       "layers" : [
         {
-          "fill" : {
-            "solid" : "display-p3:0.87180,0.87180,0.87180,1.00000"
-          },
-          "glass" : true,
-          "image-name" : "SVG Image 2.svg",
-          "name" : "SVG Image 2",
+          "glass" : false,
+          "image-name" : "XDeck-Pinos-AppIcon.png",
+          "name" : "XDeck-Pinos-AppIcon",
           "position" : {
-            "scale" : 2.6,
+            "scale" : 1,
             "translation-in-points" : [
               0,
-              0.06834935535766817
+              0
             ]
           }
         }
@@ -36,7 +33,7 @@
         "opacity" : 0.5
       },
       "translucency" : {
-        "enabled" : true,
+        "enabled" : false,
         "value" : 0.5
       }
     }
