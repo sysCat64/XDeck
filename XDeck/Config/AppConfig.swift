@@ -11,7 +11,7 @@ struct AppConfig: Decodable {
     static let defaultWindowHeight: CGFloat = 900
 
     // XDeck Pinos releases live in this repository and are tagged "pinos-vMAJOR.MINOR.PATCH".
-    static let repositoryUrl = URL(string: "https://github.com/sysCat64/XDeck")!
+    static let repositoryUrl = URL(string: "https://github.com/sysCat64/XDeck-Pinos")!
     static let releaseTagPrefix = "pinos-v"
     static var latestReleaseUrl: URL { repositoryUrl.appendingPathComponent("releases/latest") }
     static func releaseUrl(forVersion version: String) -> URL {
