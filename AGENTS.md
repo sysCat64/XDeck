@@ -187,7 +187,7 @@ Do not remove upstream attribution because the project is now independently main
 
 Do not blanket-reject the string `morishin`: legal and historical attribution is valid. What should disappear over time are stale operational dependencies on the upstream repository, not legitimate attribution.
 
-Copyright wording for new Pinos work will be handled separately.
+`LICENSE` keeps the original `Copyright (c) 2023 Shintaro Morikawa` notice and also records `Copyright (c) 2026 sysCat64` for XDeck Pinos.
 
 ## Scope Discipline
 
