@@ -89,9 +89,9 @@ There is currently no XDeck Pinos release workflow. Do not create or publish a r
 
 Do not create or push release tags unless explicitly authorized, and never use `git push --tags`.
 
-## Upstream-Era Leftovers
+## App Icon
 
-The current icon artwork (`XDeck/XDeck.icon`, `xdeck-icon.svg`) is upstream-era and awaits a separate decision. It is not a current Pinos decision; do not change it during unrelated tasks.
+The Pinos app icon is finalized (lighthouse, Monterey cypress, X-like light beams). Its source/master is `Artwork/XDeck-Pinos-AppIcon-1024.png`. Icon Composer uses the byte-identical copy `XDeck/XDeck.icon/Assets/XDeck-Pinos-AppIcon.png`, and `XDeck/XDeck.icon/icon.json` holds the active integration settings. It passed real visual validation on macOS 12.7.6 Intel. Do not redesign or replace it during unrelated work.
 
 ## Important Files
 

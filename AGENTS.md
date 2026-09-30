@@ -157,10 +157,18 @@ The WKWebView on macOS 12 uses an older system WebKit than current Safari builds
 - `XDeck/View/UpdateButton.swift`: Pinos update check and strict release URL parsing
 - `XDeck.xcodeproj/project.pbxproj`: deployment target, product identity and signing settings
 - `.github/workflows/macos12-build.yml`: current authoritative CI build
+- `Artwork/XDeck-Pinos-AppIcon-1024.png`: canonical app icon master
 - `README.md`: user-facing installation, configuration and attribution
 - `CLAUDE.md`: short working guide for Claude Code; defers to this file
 
-The current app icon artwork (`XDeck/XDeck.icon`, `xdeck-icon.svg`) is upstream-era and awaits a separate decision. Do not treat it as a Pinos decision.
+## App Icon
+
+The XDeck Pinos app icon is a finalized, Pinos-owned design: a lighthouse with a Monterey cypress, whose light beams form an X-like crossing motif.
+
+- Canonical master and source of truth for any future icon change: `Artwork/XDeck-Pinos-AppIcon-1024.png`
+- Icon Composer package: `XDeck/XDeck.icon`, which uses `XDeck/XDeck.icon/Assets/XDeck-Pinos-AppIcon.png`, a byte-identical copy of the master
+- It was visually validated on real macOS 12.7.6 Intel using the exact CI artifact from commit `36298feb` (workflow run `36702652997`). Apple Silicon Monterey remains unvalidated.
+- Do not redesign or replace the icon casually or during unrelated tasks. If it ever changes, update the master first, then replace the integration copy with a byte-identical copy.
 
 ## Testing
 
