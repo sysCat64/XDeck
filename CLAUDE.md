@@ -1,56 +1,116 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+**Read and follow `AGENTS.md` first.** It is the canonical repository-wide policy (identity, compatibility contract, signing, release and branch safety, attribution). This file is a short working guide. If the two ever seem to disagree, treat `AGENTS.md` as authoritative and inspect the current repository before acting.
 
-## Project Overview
+## Project
 
-XDeck is a native macOS desktop app — a TweetDeck-style X/Twitter client with ad-blocking. It renders X.com inside WKWebView columns and injects JavaScript to customize the UI (hide ads, detect themes, extract usernames).
+**XDeck Pinos — navigating X on Monterey.** A native macOS X client built with SwiftUI, WebKit and AppKit/Foundation. It shows x.com in multiple WKWebView columns and adapts the pages with injected JavaScript/CSS. Repository: https://github.com/sysCat64/XDeck-Pinos.
 
-## Build & Run
+XDeck Pinos was originally based on [morishin/XDeck](https://github.com/morishin/XDeck) and is maintained independently. macOS 12 (Monterey) compatibility is a core requirement.
 
-- **Open in Xcode**: `open XDeck.xcodeproj`
-- **Build**: `xcodebuild -scheme XDeck -configuration Debug build` (or Cmd+B in Xcode)
-- **Run**: Cmd+R in Xcode
-- **Deployment target**: macOS 13.3+
-- **No external dependencies** — uses only Apple frameworks (SwiftUI, WebKit, AppKit)
-- **No test targets** exist in the project
+| Item | Value |
+|---|---|
+| Product | `XDeck Pinos.app` |
+| Xcode target / scheme | `XDeck` / `XDeck` |
+| Deployment target | macOS 12.0 (set in the Xcode project) |
+| Bundle ID | `io.github.syscat64.XDeckPinos` |
+| Marketing version | `1.0.0` |
+| Config directory | `~/.config/XDeckPinos` |
+| Release tags | `pinos-vMAJOR.MINOR.PATCH` |
+
+Do not rename the target, scheme or source paths just to match the product name.
+
+## Build and Run
+
+```sh
+open XDeck.xcodeproj    # run with Cmd+R
+```
+
+```sh
+xcodebuild \
+  -project XDeck.xcodeproj \
+  -scheme XDeck \
+  -configuration Debug \
+  -destination "generic/platform=macOS" \
+  build
+```
+
+The project is intentionally ad-hoc signed, so do not add `CODE_SIGNING_ALLOWED=NO`.
+
+Authoritative CI is `.github/workflows/macos12-build.yml`: `macos-26`, Xcode 26, a Debug build, verification of x86_64 + arm64 and of the minimum macOS version, and the `XDeck-Pinos-macOS12-debug` artifact. Xcode 26 is the build contract (the `XDeck.icon` asset needs it). An older local toolchain may show extra constraints, but it does not override CI.
+
+There are no automated tests. CI success is not runtime validation: real macOS 12.7.6 Intel gates use the exact CI artifact. Apple Silicon Monterey is untested, so never claim it as validated.
 
 ## Architecture
 
-MVVM pattern with JavaScript injection for web content manipulation.
+There is no separate view-model layer. State lives in the SwiftUI views (`@State`, `@AppStorage`), mainly `ContentView`.
 
-### Key flows
+**Startup: `XDeck/XDeckApp.swift`**
+- `XDeckApp` is the `@main` entry point. `AppConfig.loadConfig()` runs before `ContentView` is created; if it fails, an error view is shown.
+- `AppDelegate` clears saved window frames, disables state restoration, and sets the initial content size on the first key window, so the starting size is deterministic.
 
-1. **Login**: `XDeckApp` → `LoginView` (WKWebView on x.com/login) → on successful login, username is extracted via JS and stored in `@AppStorage`
-2. **Main UI**: `ContentView` manages a horizontal `ScrollView` of `WebView` columns, each loading a different X.com URL based on `AppConfig`
-3. **JS Injection**: `WebViewConfigurations` builds `WKWebViewConfiguration` with multiple `WKUserScript`s injected at document end — handles ad hiding, theme detection, UI element removal, and message passing back to Swift via `WKScriptMessageHandler`
+**Main UI: `XDeck/View/ContentView.swift`**
+- Builds the multi-column layout and the WebView columns from `AppConfig`.
+- Owns the bottom toolbar (GitHub link, version/update, appearance and Hide Ads toggles, shortcut hints) and the hidden keyboard shortcuts.
+- Handles appearance, Hide Ads, zoom, refresh and window-fit.
+- Decodes messages from the web views and updates state.
+- Toolbar traps on Monterey: keep `.contentShape(Rectangle())` on the GitHub icon. The toolbar `HStack` sits at the practical 10-direct-child `ViewBuilder` limit of older SwiftUI toolchains; group or restructure instead of adding an 11th child.
 
-### Important files
+**WebView: `XDeck/View/WebView.swift`**
+- `NSViewRepresentable` around `WKWebView`. Its coordinator is the navigation delegate, UI delegate and script-message handler.
+- Forwards script messages, runs JavaScript requests from `ContentView`, applies page zoom, opens link activations with `NSWorkspace`, and shows the file picker.
+- It sets a Safari-like custom user agent because X rejects the default WebView agent. Do not remove or redesign it casually, and do not treat user-agent changes as a WebKit compatibility fix: UA spoofing was not the fix for the Monterey blank-page and login problems.
 
-- `XDeck/XDeckApp.swift` — App entry point, loads config
-- `XDeck/View/ContentView.swift` — Multi-column layout, keyboard shortcuts, toolbar
-- `XDeck/View/WebView.swift` — `NSViewRepresentable` WKWebView wrapper with custom user agent
-- `XDeck/WebViewConfigurations.swift` — All JavaScript injection logic (ad blocking, theme detection, username extraction)
-- `XDeck/Config/AppConfig.swift` — JSON config model (`~/.config/XDeck/settings.json`)
+**Injection: `XDeck/WebViewConfigurations.swift`**
+- Builds the `WKWebViewConfiguration`. All scripts inject at document start; the post-load ones wait for `DOMContentLoaded`.
+- Scripts: console bridge, username discovery, theme color, For You/Following tab selection, side-header and post-area hiding, Hide Ads/Show Ads, media-overlay detection, and the login dialog fallback.
+- Compatibility shims for macOS 12's WKWebView: `Array.prototype.toSorted` and `AbortSignal.timeout`. Both were added for real X code paths. **Do not add speculative shims.**
+- The login dialog media-query fallback is gated by `window.matchMedia("(width >= 0px)")`. Keep the gate.
 
-### Configuration
+**Messages:** JavaScript posts a JSON string to `webkit.messageHandlers.handler`; the coordinator passes it through the `WebView` binding; `ContentView` decodes `WebViewMessage` (`userName`, `themeColor`, `mediaOverlay`).
 
-User settings live at `~/.config/XDeck/settings.json`. Schema at `~/.config/XDeck/schema.json`. Column types: `forYou`, `following`, `notifications`, `profile`, `custom` (arbitrary URL).
+**Login: `XDeck/View/LoginView.swift`**
+- Loads https://x.com/login in a `WebView` with `findUserName`, `findThemeColor` and `loginDialogCompatibility`. Once the username arrives, `ContentView` switches to the columns.
 
-## public/
+**Configuration: `XDeck/Config/AppConfig.swift`**
+- Config paths under `~/.config/XDeckPinos`, creation and loading of `settings.json`, rewriting `schema.json` on every launch, and the centralized repository/release URLs: `AppConfig.repositoryUrl`, `AppConfig.latestReleaseUrl`, `AppConfig.releaseUrl(forVersion:)`. Do not hard-code the repository URL in views.
+- Upstream XDeck configuration is never migrated automatically.
 
-Static landing page website — separate from the macOS app. Not part of the Xcode build.
+**Updates: `XDeck/View/UpdateButton.swift`**
+- Checks the latest release in sysCat64/XDeck-Pinos. It accepts only the configured repository and only `pinos-vMAJOR.MINOR.PATCH` tags, fails closed otherwise, and compares numeric version components. Do not weaken the repository-path check. If the repository is renamed again, update `AppConfig.repositoryUrl` before shipping a release.
 
-## Release
+## Signing (short form)
 
-Releases are built and published by `.github/workflows/release.yml`, triggered by pushing a tag.
+Manual signing, `CODE_SIGN_IDENTITY = "-"` (ad-hoc), no `DEVELOPMENT_TEAM`, App Sandbox off, Hardened Runtime off, no Developer ID, no notarization. Debug artifacts may contain `get-task-allow`; future Release artifacts must not. Do not restore upstream Apple credentials. Full policy is in `AGENTS.md`.
 
-- **Tag format**: plain `MAJOR.MINOR` (e.g. `3.2`), **no `v` prefix**. This exact format is depended on by:
-  - The Homebrew Cask formula (`xdeck.rb` in `Homebrew/homebrew-cask`), whose `url` is `releases/download/#{version}/XDeck-#{version}.zip`
-  - The in-app update check in `XDeck/View/UpdateButton.swift`, which parses `/tag/([0-9]+\.[0-9]+)` from the redirect URL of `releases/latest`
-- **Runner requirement**: the workflow builds on `macos-26` with Xcode 26 explicitly selected. `XDeck/XDeck.icon` uses the Icon Composer (`.icon`) format introduced in Xcode 26 — older Xcode versions copy it as a plain resource instead of compiling it into the app icon, silently shipping an app with no icon (this happened with the 3.1 release). Don't downgrade the runner/Xcode version without re-verifying the icon compiles.
-- **Signing/notarization**: Developer ID Application cert (Team ID `4GERXBURZN`), notarized via `notarytool`, stapled, then zipped as `XDeck-{version}.zip` and attached to a GitHub Release via `gh release create`.
-- **Required repo secrets**: `BUILD_CERTIFICATE_BASE64`, `P12_PASSWORD`, `KEYCHAIN_PASSWORD`, `APPLE_ID`, `APPLE_APP_PASSWORD`, `APPLE_TEAM_ID` (same Apple Developer account/cert as the `Voxt` project).
-- **Homebrew Cask**: no manual bump needed. The cask has no `livecheck` block, so Homebrew falls back to its default `Git` strategy (lists tags via `git ls-remote`), which correctly picks up these version tags. BrewTestBot periodically opens a PR to `Homebrew/homebrew-cask` bumping `version`/`sha256` — just review and merge it (or run `brew bump-cask-pr --version=X.Y xdeck` to trigger it immediately).
+## Release Warning
 
-To release: bump `MARKETING_VERSION` in `project.pbxproj` if desired (the CI build overrides it from the tag anyway), then `git tag X.Y && git push origin X.Y`.
+`.github/workflows/release.yml` is an upstream-era legacy workflow and is **not** the XDeck Pinos release process. It still assumes upstream signing, notarization and secrets. `ExportOptions.plist` belongs to the same legacy path. Do not use either to publish Pinos. A dedicated Pinos release workflow will be created separately.
+
+Do not create or push release tags unless explicitly authorized, and never use `git push --tags`.
+
+## Upstream-Era Leftovers
+
+These remain for later cleanup and are not current Pinos decisions: `ExportOptions.plist`, `.github/FUNDING.yml`, `public/`, and the current upstream-era icon artwork. Do not delete them during unrelated tasks. Do not read `FUNDING.yml` (which points at the original author) as Pinos funding policy, or `public/` as the Pinos website.
+
+## Important Files
+
+- `AGENTS.md`: canonical repository policy
+- `README.md`: user-facing Pinos documentation
+- `XDeck/XDeckApp.swift`: app entry point and startup
+- `XDeck/View/ContentView.swift`: main UI, columns and toolbar
+- `XDeck/View/LoginView.swift`: X login web view
+- `XDeck/View/WebView.swift`: WKWebView wrapper and delegates
+- `XDeck/WebViewConfigurations.swift`: injected JS/CSS and Monterey compatibility code
+- `XDeck/Config/AppConfig.swift`: settings and repository/release identity
+- `XDeck/View/UpdateButton.swift`: release/version check
+- `XDeck.xcodeproj/project.pbxproj`: deployment target, product and signing
+- `.github/workflows/macos12-build.yml`: authoritative current CI
+- `.github/workflows/release.yml`: legacy upstream workflow; do not use for Pinos releases
+
+## Working Practice
+
+- Inspect before editing; prefer narrow changes and avoid opportunistic refactors. Do not mix unrelated concerns in one commit.
+- When told, verify the branch, the expected HEAD and a clean tree first, and run `git diff --check` before committing.
+- Wait for CI when asked, and use the exact CI artifact for Monterey runtime gates.
+- Keep legitimate attribution to the original project (the `LICENSE` and links to it); only stale operational dependencies on upstream should go.
