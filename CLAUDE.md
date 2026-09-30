@@ -85,13 +85,13 @@ Manual signing, `CODE_SIGN_IDENTITY = "-"` (ad-hoc), no `DEVELOPMENT_TEAM`, App 
 
 ## Release Warning
 
-`.github/workflows/release.yml` is an upstream-era legacy workflow and is **not** the XDeck Pinos release process. It still assumes upstream signing, notarization and secrets. `ExportOptions.plist` belongs to the same legacy path. Do not use either to publish Pinos. A dedicated Pinos release workflow will be created separately.
+There is currently no XDeck Pinos release workflow. Do not create or publish a release unless explicitly authorized. A dedicated Pinos release workflow will be added separately.
 
 Do not create or push release tags unless explicitly authorized, and never use `git push --tags`.
 
 ## Upstream-Era Leftovers
 
-These remain for later cleanup and are not current Pinos decisions: `ExportOptions.plist`, `.github/FUNDING.yml`, `public/`, and the current upstream-era icon artwork. Do not delete them during unrelated tasks. Do not read `FUNDING.yml` (which points at the original author) as Pinos funding policy, or `public/` as the Pinos website.
+The current icon artwork (`XDeck/XDeck.icon`, `xdeck-icon.svg`) is upstream-era and awaits a separate decision. It is not a current Pinos decision; do not change it during unrelated tasks.
 
 ## Important Files
 
@@ -106,7 +106,6 @@ These remain for later cleanup and are not current Pinos decisions: `ExportOptio
 - `XDeck/View/UpdateButton.swift`: release/version check
 - `XDeck.xcodeproj/project.pbxproj`: deployment target, product and signing
 - `.github/workflows/macos12-build.yml`: authoritative current CI
-- `.github/workflows/release.yml`: legacy upstream workflow; do not use for Pinos releases
 
 ## Working Practice
 

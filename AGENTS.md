@@ -91,7 +91,7 @@ Intended XDeck Pinos release model:
 - SHA-256 checksum published with the zip
 - `LICENSE` included in the distributed artifact
 
-**`.github/workflows/release.yml` is a legacy upstream workflow and is NOT the XDeck Pinos release process.** It expects upstream signing secrets, a Developer ID team and notarization. `ExportOptions.plist` belongs to the same legacy path. Do not use them to publish a Pinos release, and do not modify or run them as part of unrelated tasks. A dedicated Pinos release workflow will be created separately.
+**There is currently no XDeck Pinos release workflow in the repository.** A dedicated Pinos release workflow will be added separately. The upstream release workflow and its Developer ID export options were removed; they remain only in git history and are not a template for Pinos.
 
 Do not publish a release or create release tags unless explicitly authorized. Never use `git push --tags`: local clones may hold upstream's numeric tags, which must not be pushed. Push only explicitly named tags, and only when authorized.
 
@@ -157,11 +157,10 @@ The WKWebView on macOS 12 uses an older system WebKit than current Safari builds
 - `XDeck/View/UpdateButton.swift`: Pinos update check and strict release URL parsing
 - `XDeck.xcodeproj/project.pbxproj`: deployment target, product identity and signing settings
 - `.github/workflows/macos12-build.yml`: current authoritative CI build
-- `.github/workflows/release.yml`: legacy upstream workflow, **not** authoritative for Pinos
 - `README.md`: user-facing installation, configuration and attribution
-- `CLAUDE.md`: still pending a separate Pinos rewrite
+- `CLAUDE.md`: short working guide for Claude Code; defers to this file
 
-Some upstream-era leftovers are still in the repository and await separate cleanup: `ExportOptions.plist`, `.github/FUNDING.yml`, `public/` (the upstream author's landing page) and the current app icon artwork. Do not treat them as Pinos decisions.
+The current app icon artwork (`XDeck/XDeck.icon`, `xdeck-icon.svg`) is upstream-era and awaits a separate decision. Do not treat it as a Pinos decision.
 
 ## Testing
 
