@@ -57,13 +57,15 @@ xcodebuild \
 
 Do not add `CODE_SIGNING_ALLOWED=NO`. The project is intentionally configured for ad-hoc signing.
 
-The authoritative CI is `.github/workflows/macos12-build.yml`. It currently:
+The authoritative CI is `.github/workflows/ci.yml` (workflow name `CI`). It runs on `macos-26` with Xcode 26 selected explicitly, for manual dispatch, pushes to `main` and `pinos-independence` (temporary until the main cutover) and pull requests to `main`. It does not run for tags. It builds **Debug and Release** with the project's own settings (no deployment-target or signing overrides) into a deterministic DerivedData path, and runs `scripts/verify-app.sh` on each `XDeck Pinos.app`, which requires:
 
-- runs on `macos-26` and selects Xcode 26
-- builds Debug and produces `XDeck Pinos.app`
-- checks for x86_64 and arm64
-- checks that the effective minimum macOS does not exceed 12.0
-- uploads the artifact `XDeck-Pinos-macOS12-debug`
+- bundle identifier, version `1.0.0` (build `1`) and an existing executable
+- exactly x86_64 + arm64
+- a minimum macOS of exactly 12.0, in `Info.plist` and in both architectures' load commands (not merely 12.0 or lower)
+- a valid strict ad-hoc signature with no Team ID and no signing authority chain, and no Hardened Runtime flag
+- App Sandbox not enabled; in Release, no `get-task-allow` (Debug may have it)
+
+It uploads `XDeck-Pinos-macOS12-debug` and `XDeck-Pinos-macOS12-release`. The Release artifact is the candidate for the pre-release Monterey runtime gate. `scripts/verify-app.sh` is shared so a future release workflow can reuse it.
 
 The project setting itself is expected to stay exactly macOS 12.0.
 
@@ -77,7 +79,7 @@ Treat CI with Xcode 26 as authoritative for project builds. Do not downgrade CI 
 - Hardened Runtime **OFF**
 - no Developer ID signing and no notarization
 
-Debug artifacts may contain the `get-task-allow` entitlement. **Future Release artifacts must not.**
+Debug artifacts may contain the `get-task-allow` entitlement. **Release artifacts must not**; CI verifies this.
 
 Do not add or assume Apple Developer credentials. Do not restore upstream signing identities, Team IDs, notarization credentials or secrets. Do not switch Hardened Runtime on just because it is normally desirable: the project setting intentionally matches the actual ad-hoc distribution model.
 
@@ -156,7 +158,8 @@ The WKWebView on macOS 12 uses an older system WebKit than current Safari builds
 - `XDeck/Config/AppConfig.swift`: configuration paths and centralized repository/release URLs
 - `XDeck/View/UpdateButton.swift`: Pinos update check and strict release URL parsing
 - `XDeck.xcodeproj/project.pbxproj`: deployment target, product identity and signing settings
-- `.github/workflows/macos12-build.yml`: current authoritative CI build
+- `.github/workflows/ci.yml`: authoritative CI (Debug and Release build, verification, artifacts)
+- `scripts/verify-app.sh`: verifies a built app against the build contract; used by CI
 - `Artwork/XDeck-Pinos-AppIcon-1024.png`: canonical app icon master
 - `README.md`: user-facing installation, configuration and attribution
 - `CLAUDE.md`: short working guide for Claude Code; defers to this file
@@ -187,7 +190,7 @@ Relevant validation:
 - configuration loading and keyboard shortcuts
 - toolbar links and the update/version links
 
-For user-visible or runtime-sensitive compatibility changes, CI success alone is not enough. When requested, run a real macOS 12.7.6 Intel gate using the exact CI artifact. Apple Silicon Monterey remains untested and must not be described as validated.
+For user-visible or runtime-sensitive compatibility changes, CI success alone is not enough. When requested, run a real macOS 12.7.6 Intel gate using the exact CI artifact (the Release artifact when validating release readiness). A real Intel Monterey gate is also required before the first public release. Apple Silicon Monterey remains untested and must not be described as validated.
 
 ## Legal / Attribution
 

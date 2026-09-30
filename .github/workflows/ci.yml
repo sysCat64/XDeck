@@ -1,0 +1,108 @@
+name: CI
+
+# Release-readiness CI for XDeck Pinos.
+#
+# Builds Debug (development/compatibility) and Release (distribution-readiness) with the
+# project's own settings, verifies each app with scripts/verify-app.sh, and uploads the
+# result. The Release artifact is the candidate for the pre-release macOS 12 runtime gate.
+#
+# This is not a release workflow: it does not run for tags and publishes nothing.
+# "pinos-independence" is a temporary push trigger until the main cutover.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - pinos-independence
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and verify (${{ matrix.configuration }})
+    runs-on: macos-26
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - configuration: Debug
+            suffix: debug
+          - configuration: Release
+            suffix: release
+
+    env:
+      CONFIGURATION: ${{ matrix.configuration }}
+      DERIVED_DATA: ${{ runner.temp }}/DerivedData
+      ZIP_NAME: XDeck-Pinos-macOS12-${{ matrix.suffix }}.zip
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Select Xcode 26
+        run: |
+          XCODE_APP="$(
+            python3 - <<'PY'
+          import glob
+          import os
+          import re
+
+          candidates = []
+          for path in glob.glob("/Applications/Xcode_26*.app"):
+              match = re.fullmatch(r"Xcode_(26(?:\.\d+)*)\.app", os.path.basename(path))
+              if match and os.path.isdir(os.path.join(path, "Contents", "Developer")):
+                  version = tuple(int(part) for part in match.group(1).split("."))
+                  candidates.append((version, path))
+
+          if candidates:
+              print(max(candidates)[1])
+          PY
+          )"
+          if [ -z "$XCODE_APP" ]; then
+            echo "No installed Xcode 26.x application was found under /Applications"
+            exit 1
+          fi
+          echo "Selecting $XCODE_APP"
+          sudo xcode-select -s "$XCODE_APP/Contents/Developer"
+          XCODE_VERSION="$(xcodebuild -version)"
+          printf '%s\n' "$XCODE_VERSION"
+          XCODE_MAJOR="$(printf '%s\n' "$XCODE_VERSION" | awk 'NR == 1 { split($2, version, "."); print version[1] }')"
+          if [ "$XCODE_MAJOR" != "26" ]; then
+            echo "Expected Xcode major version 26, got: $XCODE_MAJOR"
+            exit 1
+          fi
+
+      - name: Build ${{ matrix.configuration }}
+        run: |
+          xcodebuild \
+            -project XDeck.xcodeproj \
+            -scheme XDeck \
+            -configuration "$CONFIGURATION" \
+            -destination "generic/platform=macOS" \
+            -derivedDataPath "$DERIVED_DATA" \
+            build
+
+      - name: Verify XDeck Pinos.app
+        run: |
+          scripts/verify-app.sh \
+            "$DERIVED_DATA/Build/Products/$CONFIGURATION/XDeck Pinos.app" \
+            "$CONFIGURATION"
+
+      - name: Package ${{ matrix.configuration }} test artifact
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent \
+            "$DERIVED_DATA/Build/Products/$CONFIGURATION/XDeck Pinos.app" \
+            "$RUNNER_TEMP/$ZIP_NAME"
+
+      - name: Upload ${{ matrix.configuration }} test artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: XDeck-Pinos-macOS12-${{ matrix.suffix }}
+          path: ${{ runner.temp }}/XDeck-Pinos-macOS12-${{ matrix.suffix }}.zip
+          if-no-files-found: error

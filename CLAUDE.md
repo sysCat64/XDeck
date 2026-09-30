@@ -37,9 +37,9 @@ xcodebuild \
 
 The project is intentionally ad-hoc signed, so do not add `CODE_SIGNING_ALLOWED=NO`.
 
-Authoritative CI is `.github/workflows/macos12-build.yml`: `macos-26`, Xcode 26, a Debug build, verification of x86_64 + arm64 and of the minimum macOS version, and the `XDeck-Pinos-macOS12-debug` artifact. Xcode 26 is the build contract (the `XDeck.icon` asset needs it). An older local toolchain may show extra constraints, but it does not override CI.
+Authoritative CI is `.github/workflows/ci.yml` (`macos-26`, Xcode 26). It builds Debug and Release and runs `scripts/verify-app.sh` on each app: universal x86_64 + arm64, minimum macOS exactly 12.0, a strict ad-hoc signature with no Team ID, Hardened Runtime and App Sandbox off, and no `get-task-allow` in Release (Debug may have it). It uploads `XDeck-Pinos-macOS12-debug` and `XDeck-Pinos-macOS12-release`; the Release artifact is the candidate for the pre-release Monterey runtime gate. Xcode 26 is the build contract (the `XDeck.icon` asset needs it). An older local toolchain may show extra constraints, but it does not override CI.
 
-There are no automated tests. CI success is not runtime validation: real macOS 12.7.6 Intel gates use the exact CI artifact. Apple Silicon Monterey is untested, so never claim it as validated.
+There are no automated tests. CI success is not runtime validation: real macOS 12.7.6 Intel gates use the exact CI artifact, and one is still required before the first public release. Apple Silicon Monterey is untested, so never claim it as validated.
 
 ## Architecture
 
@@ -105,7 +105,8 @@ The Pinos app icon is finalized (lighthouse, Monterey cypress, X-like light beam
 - `XDeck/Config/AppConfig.swift`: settings and repository/release identity
 - `XDeck/View/UpdateButton.swift`: release/version check
 - `XDeck.xcodeproj/project.pbxproj`: deployment target, product and signing
-- `.github/workflows/macos12-build.yml`: authoritative current CI
+- `.github/workflows/ci.yml`: authoritative CI (Debug + Release build, verification, artifacts)
+- `scripts/verify-app.sh`: verifies a built app against the build contract
 
 ## Working Practice
 
