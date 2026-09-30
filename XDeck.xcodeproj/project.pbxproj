@@ -380,7 +380,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2023 Shintaro Morikawa; Copyright © 2026 sysCat64";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2023 Shintaro Morikawa\nCopyright © 2026 sysCat64";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -408,7 +408,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2023 Shintaro Morikawa; Copyright © 2026 sysCat64";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2023 Shintaro Morikawa\nCopyright © 2026 sysCat64";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
