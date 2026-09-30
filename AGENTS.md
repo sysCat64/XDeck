@@ -65,7 +65,7 @@ The authoritative CI is `.github/workflows/ci.yml` (workflow name `CI`). It runs
 - a valid strict ad-hoc signature with no Team ID and no signing authority chain, and no Hardened Runtime flag
 - App Sandbox not enabled; in Release, no `get-task-allow` (Debug may have it)
 
-It uploads `XDeck-Pinos-macOS12-debug` and `XDeck-Pinos-macOS12-release`. The Release artifact is the candidate for the pre-release Monterey runtime gate. `scripts/verify-app.sh` is shared so a future release workflow can reuse it.
+It uploads `XDeck-Pinos-macOS12-debug` and `XDeck-Pinos-macOS12-release`. The Release artifact is the candidate for the pre-release Monterey runtime gate. `scripts/verify-app.sh` is shared with the release workflow (`.github/workflows/release.yml`).
 
 The project setting itself is expected to stay exactly macOS 12.0.
 
@@ -93,9 +93,16 @@ Intended XDeck Pinos release model:
 - SHA-256 checksum published with the zip
 - `LICENSE` included in the distributed artifact
 
-**There is currently no XDeck Pinos release workflow in the repository.** A dedicated Pinos release workflow will be added separately. The upstream release workflow and its Developer ID export options were removed; they remain only in git history and are not a template for Pinos.
+The release workflow is `.github/workflows/release.yml` (workflow name `Release`). The upstream release workflow and its Developer ID export options were removed; they remain only in git history and are not a template for Pinos.
 
-Do not publish a release or create release tags unless explicitly authorized. Never use `git push --tags`: local clones may hold upstream's numeric tags, which must not be pushed. Push only explicitly named tags, and only when authorized.
+- **Manual `workflow_dispatch` is a dry run.** It never creates a tag and never creates a GitHub Release. It builds, verifies and packages exactly like a real release and uploads the result as the Actions artifact `XDeck-Pinos-<version>-release-candidate`. The version comes from the built app, not from the branch name.
+- **A push of a `pinos-vMAJOR.MINOR.PATCH` tag is the real release trigger.** The workflow trigger `pinos-v*` is only a glob; the workflow itself validates the exact format `^pinos-v[0-9]+\.[0-9]+\.[0-9]+$` in bash before building, and requires the tag's version to equal `CFBundleShortVersionString` of the built app. It fails closed otherwise.
+- Real releases are created as **drafts only** (`draft: true`, not a pre-release). The workflow never publishes them and never creates or moves tags. Only the draft-release job has `contents: write`.
+- Release builds run `scripts/verify-app.sh` on the built app. The distributable `XDeck-Pinos-<version>.zip` contains `XDeck Pinos.app` and `LICENSE` at its root. It is re-extracted and verified again with `scripts/verify-app.sh` before the `XDeck-Pinos-<version>.zip.sha256` sidecar is created from the final ZIP. The Actions artifact digest is a different value from this checksum.
+- The draft release notes contain a runtime-validation sentence (`VALIDATION_NOTE` in `release.yml`). Review it before every release so it matches what was actually validated.
+- `scripts/verify-app.sh` pins the expected version (`EXPECTED_SHORT_VERSION`), so a version bump must update it together with the project version.
+
+Do not publish a release or create release tags unless explicitly authorized by the owner, and never run the tag-triggered path for testing: use `workflow_dispatch`. Never use `git push --tags`: local clones may hold upstream's numeric tags, which must not be pushed. Push only explicitly named tags, and only when authorized.
 
 ## Branch and History Discipline
 

@@ -1,0 +1,320 @@
+name: Release
+
+# XDeck Pinos release workflow.
+#
+# Two entry paths, deliberately kept apart:
+#
+#   workflow_dispatch          DRY RUN. Builds, verifies and packages exactly like a real
+#                              release and uploads the result as an Actions artifact.
+#                              It never creates a tag and never creates a GitHub Release.
+#
+#   push of tag pinos-v*      REAL RELEASE. The tag filter below is only a glob; the
+#                              "Resolve mode" step enforces the exact format
+#                              pinos-vMAJOR.MINOR.PATCH with a bash regex before anything is
+#                              built. The tag must match CFBundleShortVersionString of the
+#                              built app. The result is a DRAFT GitHub Release (never
+#                              published automatically, never a pre-release).
+#
+# Releases are ad-hoc signed and not notarized. The workflow never creates or moves tags.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'pinos-v*'
+
+permissions:
+  contents: read
+
+env:
+  # UPDATE POINT: review before every release. This sentence goes into the draft release
+  # notes verbatim; it must describe what was actually validated for that version.
+  VALIDATION_NOTE: Validated at runtime on macOS 12.7.6 (Intel). Apple Silicon Monterey has not been runtime-tested.
+
+jobs:
+  build:
+    name: Build, verify and package
+    runs-on: macos-26
+    permissions:
+      contents: read
+
+    outputs:
+      is_release: ${{ steps.mode.outputs.is_release }}
+      tag: ${{ steps.mode.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+      artifact_name: ${{ steps.version.outputs.artifact_name }}
+
+    steps:
+      - name: Resolve mode (dry run or tag release)
+        id: mode
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          TAG_RE='^pinos-v[0-9]+\.[0-9]+\.[0-9]+$'
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            # The dispatched ref is a branch (or whatever the caller picked); it is never
+            # interpreted as a release tag.
+            echo "Mode: DRY RUN (workflow_dispatch). No tag and no GitHub Release will be created."
+            {
+              echo "is_release=false"
+              echo "tag="
+            } >> "$GITHUB_OUTPUT"
+          elif [ "$EVENT_NAME" = "push" ]; then
+            if [ "$REF_TYPE" != "tag" ]; then
+              echo "::error::push event is not a tag push (ref type: $REF_TYPE)"
+              exit 1
+            fi
+            if ! [[ "$REF_NAME" =~ $TAG_RE ]]; then
+              echo "::error::'$REF_NAME' is not a valid release tag; expected pinos-vMAJOR.MINOR.PATCH (for example pinos-v1.0.0)"
+              exit 1
+            fi
+            echo "Mode: REAL RELEASE for tag $REF_NAME (a draft release will be created)."
+            {
+              echo "is_release=true"
+              echo "tag=$REF_NAME"
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::unsupported event: $EVENT_NAME"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Select Xcode 26
+        run: |
+          XCODE_APP="$(
+            python3 - <<'PY'
+          import glob
+          import os
+          import re
+
+          candidates = []
+          for path in glob.glob("/Applications/Xcode_26*.app"):
+              match = re.fullmatch(r"Xcode_(26(?:\.\d+)*)\.app", os.path.basename(path))
+              if match and os.path.isdir(os.path.join(path, "Contents", "Developer")):
+                  version = tuple(int(part) for part in match.group(1).split("."))
+                  candidates.append((version, path))
+
+          if candidates:
+              print(max(candidates)[1])
+          PY
+          )"
+          if [ -z "$XCODE_APP" ]; then
+            echo "No installed Xcode 26.x application was found under /Applications"
+            exit 1
+          fi
+          echo "Selecting $XCODE_APP"
+          sudo xcode-select -s "$XCODE_APP/Contents/Developer"
+          XCODE_VERSION="$(xcodebuild -version)"
+          printf '%s\n' "$XCODE_VERSION"
+          XCODE_MAJOR="$(printf '%s\n' "$XCODE_VERSION" | awk 'NR == 1 { split($2, version, "."); print version[1] }')"
+          if [ "$XCODE_MAJOR" != "26" ]; then
+            echo "Expected Xcode major version 26, got: $XCODE_MAJOR"
+            exit 1
+          fi
+
+      - name: Build Release
+        run: |
+          xcodebuild \
+            -project XDeck.xcodeproj \
+            -scheme XDeck \
+            -configuration Release \
+            -destination "generic/platform=macOS" \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            build
+
+      - name: Verify built XDeck Pinos.app
+        run: |
+          scripts/verify-app.sh \
+            "$RUNNER_TEMP/DerivedData/Build/Products/Release/XDeck Pinos.app" \
+            Release
+
+      - name: Determine version
+        id: version
+        env:
+          IS_RELEASE: ${{ steps.mode.outputs.is_release }}
+          TAG: ${{ steps.mode.outputs.tag }}
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/DerivedData/Build/Products/Release/XDeck Pinos.app"
+          VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::built app version '$VERSION' is not MAJOR.MINOR.PATCH"
+            exit 1
+          fi
+
+          if [ "$IS_RELEASE" = "true" ]; then
+            VERSION_FROM_TAG="${TAG#pinos-v}"
+            if [ "$VERSION_FROM_TAG" != "$VERSION" ]; then
+              echo "::error::tag $TAG (version $VERSION_FROM_TAG) does not match CFBundleShortVersionString $VERSION of the built app"
+              exit 1
+            fi
+            echo "Tag $TAG matches the built app version $VERSION."
+          else
+            echo "Dry run: version taken from the built app: $VERSION"
+          fi
+
+          {
+            echo "version=$VERSION"
+            echo "artifact_name=XDeck-Pinos-$VERSION-release-candidate"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Package ZIP (XDeck Pinos.app + LICENSE)
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/DerivedData/Build/Products/Release/XDeck Pinos.app"
+          STAGE="$RUNNER_TEMP/stage"
+          OUT="$RUNNER_TEMP/release-out"
+          ZIP_NAME="XDeck-Pinos-$VERSION.zip"
+
+          rm -rf "$STAGE" "$OUT"
+          mkdir -p "$STAGE" "$OUT"
+          ditto "$APP" "$STAGE/XDeck Pinos.app"
+          cp LICENSE "$STAGE/LICENSE"
+
+          # The staging directory must hold exactly the app and LICENSE.
+          EXPECTED="$(printf 'LICENSE\nXDeck Pinos.app\n')"
+          ACTUAL="$(ls -A "$STAGE")"
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::unexpected staging contents:"
+            printf '%s\n' "$ACTUAL"
+            exit 1
+          fi
+
+          # No --keepParent: the contents of the staging directory become the ZIP root.
+          ditto -c -k --sequesterRsrc "$STAGE" "$OUT/$ZIP_NAME"
+          ls -l "$OUT"
+
+      - name: Re-extract and verify the packaged app
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/release-out"
+          ZIP="$OUT/XDeck-Pinos-$VERSION.zip"
+          EXTRACT="$RUNNER_TEMP/extracted"
+
+          echo "ZIP entries at the top level:"
+          unzip -Z1 "$ZIP" | cut -d/ -f1 | sort -u
+
+          rm -rf "$EXTRACT"
+          mkdir -p "$EXTRACT"
+          ditto -x -k "$ZIP" "$EXTRACT"
+
+          EXPECTED="$(printf 'LICENSE\nXDeck Pinos.app\n')"
+          ACTUAL="$(ls -A "$EXTRACT")"
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::the extracted ZIP root must contain exactly 'XDeck Pinos.app' and 'LICENSE', found:"
+            printf '%s\n' "$ACTUAL"
+            exit 1
+          fi
+          [ -d "$EXTRACT/XDeck Pinos.app" ] || { echo "::error::XDeck Pinos.app is not a directory"; exit 1; }
+          [ -f "$EXTRACT/LICENSE" ] || { echo "::error::LICENSE is not a file"; exit 1; }
+          cmp LICENSE "$EXTRACT/LICENSE"
+
+          scripts/verify-app.sh "$EXTRACT/XDeck Pinos.app" Release
+
+      - name: Create SHA-256 checksum
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/release-out"
+          ZIP_NAME="XDeck-Pinos-$VERSION.zip"
+          cd "$OUT"
+          # The ZIP is final at this point; the checksum is taken from these exact bytes.
+          shasum -a 256 "$ZIP_NAME" > "$ZIP_NAME.sha256"
+          shasum -a 256 -c "$ZIP_NAME.sha256"
+          echo "Checksum file:"
+          cat "$ZIP_NAME.sha256"
+          ls -l "$OUT"
+
+      - name: Upload release candidate artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.version.outputs.artifact_name }}
+          path: |
+            ${{ runner.temp }}/release-out/XDeck-Pinos-${{ steps.version.outputs.version }}.zip
+            ${{ runner.temp }}/release-out/XDeck-Pinos-${{ steps.version.outputs.version }}.zip.sha256
+          if-no-files-found: error
+
+  draft-release:
+    name: Create draft GitHub Release
+    # Only a valid, version-matched tag push reaches this job. Manual dispatch never does.
+    if: ${{ github.event_name == 'push' && needs.build.outputs.is_release == 'true' }}
+    needs: build
+    runs-on: ubuntu-latest
+    # The only job with write access.
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download release candidate artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ needs.build.outputs.artifact_name }}
+          path: ${{ runner.temp }}/release-files
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          BUILD_TAG: ${{ needs.build.outputs.tag }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          TAG_RE='^pinos-v[0-9]+\.[0-9]+\.[0-9]+$'
+
+          # Defense in depth: re-check the tag before anything is created.
+          [ "$REF_TYPE" = "tag" ] || { echo "::error::not a tag ref"; exit 1; }
+          [[ "$REF_NAME" =~ $TAG_RE ]] || { echo "::error::'$REF_NAME' is not a valid release tag"; exit 1; }
+          [ "$REF_NAME" = "$BUILD_TAG" ] || { echo "::error::tag mismatch between jobs"; exit 1; }
+          [ "$REF_NAME" = "pinos-v$VERSION" ] || { echo "::error::tag does not match version $VERSION"; exit 1; }
+
+          cd "$RUNNER_TEMP/release-files"
+          ZIP_NAME="XDeck-Pinos-$VERSION.zip"
+          ls -l
+          sha256sum -c "$ZIP_NAME.sha256"
+
+          {
+            echo "XDeck Pinos $VERSION, navigating X on Monterey."
+            echo
+            echo "- Requires macOS 12.0 or later."
+            echo "- Universal build: x86_64 and arm64."
+            echo "- $VALIDATION_NOTE"
+            echo "- Ad-hoc signed and not notarized (no Developer ID)."
+            echo
+            echo "### First launch (Gatekeeper)"
+            echo
+            echo "Because the app is not notarized, macOS blocks the first launch of a downloaded copy. Control-click (right-click) XDeck Pinos.app and choose Open, then confirm. Alternatively, try to open it once, then use Open Anyway in the Security settings (Privacy & Security)."
+            echo
+            echo "### Files"
+            echo
+            echo "- $ZIP_NAME contains XDeck Pinos.app and LICENSE."
+            echo "- $ZIP_NAME.sha256 is the SHA-256 checksum of the ZIP."
+            echo
+            echo "### About"
+            echo
+            echo "XDeck Pinos was originally based on XDeck by Shintaro Morikawa (https://github.com/morishin/XDeck) and is now maintained independently. See LICENSE."
+          } > "$RUNNER_TEMP/release-notes.md"
+
+          # --verify-tag aborts if the tag does not already exist; this workflow never creates tags.
+          gh release create "$REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --draft \
+            --title "XDeck Pinos $VERSION" \
+            --notes-file "$RUNNER_TEMP/release-notes.md" \
+            "$ZIP_NAME" \
+            "$ZIP_NAME.sha256"
+
+          gh release view "$REF_NAME" --repo "$GITHUB_REPOSITORY" --json tagName,isDraft,isPrerelease,assets \
+            --jq '{tagName, isDraft, isPrerelease, assets: [.assets[].name]}'

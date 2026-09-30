@@ -85,9 +85,9 @@ Manual signing, `CODE_SIGN_IDENTITY = "-"` (ad-hoc), no `DEVELOPMENT_TEAM`, App 
 
 ## Release Warning
 
-There is currently no XDeck Pinos release workflow. Do not create or publish a release unless explicitly authorized. A dedicated Pinos release workflow will be added separately.
+The release workflow is `.github/workflows/release.yml`. Manual `workflow_dispatch` is a dry run: it never creates a tag or a GitHub Release, and uploads `XDeck-Pinos-<version>-release-candidate` as an Actions artifact. Pushing a `pinos-vMAJOR.MINOR.PATCH` tag is the real trigger; the workflow validates the exact tag format in bash and requires it to match the built app's `CFBundleShortVersionString`. Real releases are drafts only, never published automatically. Both paths build Release, run `scripts/verify-app.sh`, package `XDeck Pinos.app` + `LICENSE` into `XDeck-Pinos-<version>.zip`, re-extract and reverify the ZIP, and write a `.sha256` sidecar. Details are in `AGENTS.md`.
 
-Do not create or push release tags unless explicitly authorized, and never use `git push --tags`.
+Do not create or publish a release, or create or push release tags, unless the owner explicitly authorizes it, and never use `git push --tags`.
 
 ## App Icon
 
