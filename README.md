@@ -2,6 +2,8 @@
 
 **XDeck Pinos — navigating X on Monterey.** A native macOS client that shows X in multiple columns, in the style of TweetDeck.
 
+![XDeck Pinos — lighthouse on the Monterey coast](Artwork/XDeck-Pinos-README-Cover-1600x640.png)
+
 XDeck Pinos was originally based on [XDeck](https://github.com/morishin/XDeck) and is maintained independently for Monterey (macOS 12) compatibility. It is not affiliated with, maintained by, or endorsed by the original XDeck author.
 
 > **Status:** version 1.0.0 is in preparation. The first GitHub Release has not been published yet.
