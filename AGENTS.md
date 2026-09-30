@@ -1,35 +1,50 @@
 # AGENTS.md
 
+Guidance for coding agents working on XDeck Pinos.
+
 ## Project
 
-XDeck is a native macOS X/Twitter client built with SwiftUI, WebKit, AppKit, and Foundation.
+**XDeck Pinos — navigating X on Monterey.**
 
-This repository is a fork of `morishin/XDeck`.
+XDeck Pinos is a native macOS X client built with SwiftUI, WebKit, AppKit and Foundation. It shows x.com in multiple WKWebView columns and adjusts the pages with injected JavaScript/CSS.
 
-The current goal of this fork is to investigate and implement compatibility with macOS 12 Monterey while preserving upstream behavior as much as possible.
+- Repository: https://github.com/sysCat64/XDeck-Pinos
+- XDeck Pinos was originally based on [morishin/XDeck](https://github.com/morishin/XDeck) and is **maintained independently**. GitHub may still list this repository in the upstream fork network; that does not change how it is maintained.
+- The upstream repository is a historical and reference source, not the operational release repository.
+- There is no obligation to merge, rebase or adopt upstream changes. Useful upstream fixes may be ported selectively.
+- Do not open pull requests against upstream unless explicitly asked.
+- Preserve the complete git history and the legal attribution to the original project (see Legal / Attribution).
 
-## Primary Goal
+Monterey (macOS 12) compatibility is a core goal of the project. Do not describe or treat the project as a temporary compatibility fork or an investigation.
 
-Make XDeck build and run on macOS 12.7.x.
+## Canonical Identity
 
-Do not redesign the application or change product behavior unless required for macOS 12 compatibility.
+| Item | Value |
+|---|---|
+| Product | `XDeck Pinos.app` |
+| Xcode target | `XDeck` |
+| Scheme | `XDeck` |
+| Bundle identifier | `io.github.syscat64.XDeckPinos` |
+| Marketing version | `1.0.0` |
+| Configuration directory | `~/.config/XDeckPinos` |
+| Repository URL | `https://github.com/sysCat64/XDeck-Pinos` |
+| Release tag prefix | `pinos-v` |
+| First planned public release | `pinos-v1.0.0` |
 
-Prefer the smallest compatibility changes possible.
+Do not rename the target, scheme, source directory or Swift types just to match the product name.
 
-## Compatibility Policy
+## macOS Compatibility Contract
 
-- Target macOS 12 unless a task explicitly says otherwise.
-- Preserve existing behavior on newer macOS versions.
-- When an API is unavailable on macOS 12:
-  1. Prefer an older equivalent Apple API.
-  2. Otherwise use availability checks where appropriate.
-  3. Avoid removing functionality unless no reasonable compatibility path exists.
-- Do not introduce third-party dependencies solely to solve compatibility issues unless explicitly approved.
-- Keep SwiftUI/WebKit/AppKit architecture intact unless a compatibility issue requires otherwise.
+- The canonical deployment target is **macOS 12.0**. It lives in `XDeck.xcodeproj/project.pbxproj` and stays authoritative. Do not reintroduce command-line deployment-target overrides.
+- Real-device validation exists for **macOS 12.7.6 on Intel**.
+- **Apple Silicon Monterey runtime validation has not been performed.** Never describe it as validated.
+- Preserve behavior on newer macOS versions where possible.
+- Prefer the smallest compatibility fix over broad redesigns.
+- Do not add third-party dependencies for compatibility without explicit approval.
 
-## Build
+## Build and CI
 
-Primary validation command:
+Project build shape:
 
 ```sh
 xcodebuild \
@@ -37,73 +52,147 @@ xcodebuild \
   -scheme XDeck \
   -configuration Debug \
   -destination "generic/platform=macOS" \
-  CODE_SIGNING_ALLOWED=NO \
   build
 ```
 
-Treat compiler availability errors as the authoritative list of macOS 12 migration work.
+Do not add `CODE_SIGNING_ALLOWED=NO`. The project is intentionally configured for ad-hoc signing.
+
+The authoritative CI is `.github/workflows/macos12-build.yml`. It currently:
+
+- runs on `macos-26` and selects Xcode 26
+- builds Debug and produces `XDeck Pinos.app`
+- checks for x86_64 and arm64
+- checks that the effective minimum macOS does not exceed 12.0
+- uploads the artifact `XDeck-Pinos-macOS12-debug`
+
+The project setting itself is expected to stay exactly macOS 12.0.
+
+Treat CI with Xcode 26 as authoritative for project builds. Do not downgrade CI to an older Xcode because an older local toolchain behaves differently. `XDeck/XDeck.icon` needs the newer toolchain to compile into the app icon.
+
+## Signing and Security Model
+
+- `CODE_SIGN_STYLE = Manual`, `CODE_SIGN_IDENTITY = "-"`: ad-hoc signed
+- no `DEVELOPMENT_TEAM`
+- App Sandbox **OFF** (no entitlements file)
+- Hardened Runtime **OFF**
+- no Developer ID signing and no notarization
+
+Debug artifacts may contain the `get-task-allow` entitlement. **Future Release artifacts must not.**
+
+Do not add or assume Apple Developer credentials. Do not restore upstream signing identities, Team IDs, notarization credentials or secrets. Do not switch Hardened Runtime on just because it is normally desirable: the project setting intentionally matches the actual ad-hoc distribution model.
+
+## Release Status
+
+Intended XDeck Pinos release model:
+
+- GitHub Releases, tagged `pinos-vMAJOR.MINOR.PATCH`; first release `pinos-v1.0.0`
+- universal x86_64 + arm64, ad-hoc signed, not notarized
+- created as a draft first
+- SHA-256 checksum published with the zip
+- `LICENSE` included in the distributed artifact
+
+**`.github/workflows/release.yml` is a legacy upstream workflow and is NOT the XDeck Pinos release process.** It expects upstream signing secrets, a Developer ID team and notarization. `ExportOptions.plist` belongs to the same legacy path. Do not use them to publish a Pinos release, and do not modify or run them as part of unrelated tasks. A dedicated Pinos release workflow will be created separately.
+
+Do not publish a release or create release tags unless explicitly authorized. Never use `git push --tags`: local clones may hold upstream's numeric tags, which must not be pushed. Push only explicitly named tags, and only when authorized.
+
+## Branch and History Discipline
+
+- `pinos-independence` is the current migration branch.
+- `main` and `macos12` are preserved historical branches. `main` still points at the upstream baseline until an authorized cutover.
+- Archive tags mark preserved milestones: `archive/xdeck-baseline` and `archive/pinos-macos12-validated`.
+- Do not delete, rewrite, force-push or repoint these branches or tags unless explicitly authorized.
+- Keep commits narrow and single-purpose.
+
+For migration work:
+
+1. verify the branch, the expected HEAD and a clean tree
+2. inspect the current implementation
+3. make the smallest necessary change
+4. run the relevant validation
+5. commit
+6. push only the intended branch
+7. wait for CI
+8. use the exact CI artifact for runtime gates when required
+
+## Repository URL Centralization
+
+Operational GitHub URLs are centralized in `XDeck/Config/AppConfig.swift`:
+
+- `AppConfig.repositoryUrl`
+- `AppConfig.latestReleaseUrl`
+- `AppConfig.releaseUrl(forVersion:)`
+
+Do not add new hard-coded operational repository URLs in views when these can be used.
+
+The release parser in `UpdateButton.swift` deliberately validates the scheme, the host, the exact configured repository path and `pinos-vMAJOR.MINOR.PATCH`, and fails closed for anything else. If the repository is renamed again, update `AppConfig.repositoryUrl` before shipping a release.
+
+## Configuration and App Identity
+
+XDeck Pinos uses `~/.config/XDeckPinos`, separate from upstream XDeck. `settings.json` is created there on first launch; `schema.json` is rewritten on every launch.
+
+Do not add automatic migration unless explicitly requested. Existing upstream XDeck data and configuration must not be copied, modified or deleted automatically. Because Pinos has its own bundle identifier, its login session and preferences are separate as well.
+
+## Monterey WebKit Compatibility
+
+The WKWebView on macOS 12 uses an older system WebKit than current Safari builds.
+
+- Two document-start shims are required by reached X.com code paths: `Array.prototype.toSorted` and `AbortSignal.timeout`.
+- Do not broaden the shim set speculatively. Add another Web API shim only when a real reached call site shows that Monterey's WKWebView lacks it.
+- A login-dialog fallback stylesheet covers the older media-query syntax. It is feature-gated (`matchMedia("(width >= 0px)")`), so it only applies on engines that cannot parse range media queries. Keep that gating instead of applying the fallback to newer engines.
+- Do not replace these fixes with user-agent spoofing. UA testing showed the user agent was not the root cause of the blank-page and login problems.
+
+## UI Compatibility Notes
+
+- The GitHub toolbar icon is a custom `Shape` inside a plain `Button`. Keep its explicit `.contentShape(Rectangle())`; without it the icon was not reliably clickable on Monterey.
+- The bottom toolbar `HStack` currently stays within the older SwiftUI `ViewBuilder` limit of 10 direct children. Older toolchains fail if more are added. When adding a toolbar item, group views or restructure deliberately instead of adding another direct child.
+- Do not refactor the toolbar for style alone.
 
 ## Important Files
 
-- `XDeck/XDeckApp.swift` — app entry point
-- `XDeck/View/ContentView.swift` — main multi-column UI
-- `XDeck/View/WebView.swift` — WKWebView wrapper
-- `XDeck/WebViewConfigurations.swift` — JavaScript injection
-- `XDeck/Config/AppConfig.swift` — settings/configuration handling
-- `XDeck.xcodeproj/project.pbxproj` — deployment target and build settings
-- `.github/workflows/release.yml` — upstream release workflow
-- `CLAUDE.md` — upstream development notes
+- `XDeck/XDeckApp.swift`: app entry point
+- `XDeck/View/ContentView.swift`: main multi-column UI and bottom toolbar
+- `XDeck/View/WebView.swift`: WKWebView wrapper
+- `XDeck/WebViewConfigurations.swift`: injected JavaScript/CSS and compatibility shims
+- `XDeck/Config/AppConfig.swift`: configuration paths and centralized repository/release URLs
+- `XDeck/View/UpdateButton.swift`: Pinos update check and strict release URL parsing
+- `XDeck.xcodeproj/project.pbxproj`: deployment target, product identity and signing settings
+- `.github/workflows/macos12-build.yml`: current authoritative CI build
+- `.github/workflows/release.yml`: legacy upstream workflow, **not** authoritative for Pinos
+- `README.md`: user-facing installation, configuration and attribution
+- `CLAUDE.md`: still pending a separate Pinos rewrite
 
-## Upstream Preservation
-
-Treat `morishin/XDeck` as upstream.
-
-Do not:
-- open pull requests against upstream unless explicitly requested
-- change upstream release/tag conventions unnecessarily
-- modify signing/notarization credentials or assume upstream secrets exist
-- publish releases unless explicitly requested
-
-For compatibility work, prefer changes isolated to this fork.
-
-## Release / Signing
-
-Initial macOS 12 compatibility work does not require Developer ID signing or notarization.
-
-For CI experiments, unsigned builds or ad-hoc artifacts are acceptable.
-
-Do not attempt to use upstream Apple Developer credentials.
-
-## Scope Discipline
-
-For each task:
-
-1. Inspect the existing implementation first.
-2. Identify the exact macOS availability problem.
-3. Make the smallest compatible change.
-4. Build again.
-5. Report remaining compatibility errors separately from unrelated warnings.
-
-Do not perform broad refactors while compatibility work is still being established.
+Some upstream-era leftovers are still in the repository and await separate cleanup: `ExportOptions.plist`, `.github/FUNDING.yml`, `public/` (the upstream author's landing page) and the current app icon artwork. Do not treat them as Pinos decisions.
 
 ## Testing
 
-There are currently no automated test targets.
+There are no automated test targets.
 
-Validation should focus on:
+Relevant validation:
 
-- successful macOS 12-targeted compilation
-- app launch
-- login flow
-- X.com WebView rendering
-- multi-column layout
-- theme switching
-- ad hiding
-- configuration loading
-- keyboard shortcuts
+- macOS 12-targeted compilation
+- exact app identity and version
+- universal x86_64 + arm64 executable
+- minimum macOS
+- codesign verification and the ad-hoc signature
+- absence of App Sandbox and of Hardened Runtime
+- app launch, X login and X.com rendering
+- multi-column behavior, appearance switching and Hide Ads
+- configuration loading and keyboard shortcuts
+- toolbar links and the update/version links
 
-## Notes
+For user-visible or runtime-sensitive compatibility changes, CI success alone is not enough. When requested, run a real macOS 12.7.6 Intel gate using the exact CI artifact. Apple Silicon Monterey remains untested and must not be described as validated.
 
-`XDeck/XDeck.icon` requires Xcode 26 to compile correctly in the upstream release workflow.
+## Legal / Attribution
 
-If icon handling prevents compatibility builds, prefer a compatibility-specific icon solution rather than weakening unrelated application behavior.
+Do not remove upstream attribution because the project is now independently maintained. The existing MIT `LICENSE` and the original copyright notice must be preserved.
+
+Do not blanket-reject the string `morishin`: legal and historical attribution is valid. What should disappear over time are stale operational dependencies on the upstream repository, not legitimate attribution.
+
+Copyright wording for new Pinos work will be handled separately.
+
+## Scope Discipline
+
+- Do not make opportunistic refactors during compatibility or release work.
+- Do not mix unrelated concerns in one commit.
+- Do not change icon design, copyright wording, `LICENSE`, CI architecture or the release workflow unless the task explicitly authorizes it.
+- When unsure whether something is an intentional Pinos decision or an upstream leftover, inspect the current repository state before changing it.
