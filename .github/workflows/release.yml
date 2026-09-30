@@ -2,11 +2,16 @@ name: Release
 
 # XDeck Pinos release workflow.
 #
-# Two entry paths, deliberately kept apart:
+# Three entry paths, deliberately kept apart ("Resolve mode" enforces the separation):
 #
 #   workflow_dispatch          DRY RUN. Builds, verifies and packages exactly like a real
 #                              release and uploads the result as an Actions artifact.
 #                              It never creates a tag and never creates a GitHub Release.
+#
+#   push to pinos-independence TEMPORARY DRY RUN, same as workflow_dispatch. This branch
+#                              trigger exists only because GitHub cannot dispatch a workflow
+#                              that is not yet on the default branch. Remove it (and the
+#                              matching branch trigger in ci.yml) before the main cutover.
 #
 #   push of tag pinos-v*      REAL RELEASE. The tag filter below is only a glob; the
 #                              "Resolve mode" step enforces the exact format
@@ -20,6 +25,9 @@ name: Release
 on:
   workflow_dispatch:
   push:
+    # TEMPORARY: dry-run trigger until the main cutover; see the header comment.
+    branches:
+      - pinos-independence
     tags:
       - 'pinos-v*'
 
@@ -63,11 +71,19 @@ jobs:
               echo "is_release=false"
               echo "tag="
             } >> "$GITHUB_OUTPUT"
-          elif [ "$EVENT_NAME" = "push" ]; then
-            if [ "$REF_TYPE" != "tag" ]; then
-              echo "::error::push event is not a tag push (ref type: $REF_TYPE)"
+          elif [ "$EVENT_NAME" = "push" ] && [ "$REF_TYPE" = "branch" ]; then
+            # TEMPORARY dry-run path. Only the one migration branch is accepted, and it is
+            # never a release: is_release stays false, so no GitHub Release can be created.
+            if [ "$REF_NAME" != "pinos-independence" ]; then
+              echo "::error::push to branch '$REF_NAME' is not a supported dry-run trigger"
               exit 1
             fi
+            echo "Mode: DRY RUN (push to branch $REF_NAME). No tag and no GitHub Release will be created."
+            {
+              echo "is_release=false"
+              echo "tag="
+            } >> "$GITHUB_OUTPUT"
+          elif [ "$EVENT_NAME" = "push" ] && [ "$REF_TYPE" = "tag" ]; then
             if ! [[ "$REF_NAME" =~ $TAG_RE ]]; then
               echo "::error::'$REF_NAME' is not a valid release tag; expected pinos-vMAJOR.MINOR.PATCH (for example pinos-v1.0.0)"
               exit 1
@@ -78,7 +94,7 @@ jobs:
               echo "tag=$REF_NAME"
             } >> "$GITHUB_OUTPUT"
           else
-            echo "::error::unsupported event: $EVENT_NAME"
+            echo "::error::unsupported trigger: event '$EVENT_NAME', ref type '$REF_TYPE'"
             exit 1
           fi
 
