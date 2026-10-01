@@ -6,8 +6,6 @@
 
 XDeck Pinos was originally based on [XDeck](https://github.com/morishin/XDeck) and is maintained independently for Monterey (macOS 12) compatibility. It is not affiliated with, maintained by, or endorsed by the original XDeck author.
 
-> **Status:** version 1.0.0 is in preparation. The first GitHub Release has not been published yet.
-
 ## Features
 
 - Multi-column X browsing: each column is a web view of x.com
@@ -109,4 +107,4 @@ X is a trademark of X Corp. XDeck Pinos is not affiliated with X Corp.
 
 ## License
 
-Released under the MIT License. See [LICENSE](LICENSE) for the license text and the original copyright notice.
+Released under the MIT License. See [LICENSE](LICENSE) for the license text and copyright notices.
