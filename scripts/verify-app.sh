@@ -12,8 +12,8 @@ set -euo pipefail
 
 EXPECTED_APP_NAME="XDeck Pinos.app"
 EXPECTED_BUNDLE_ID="io.github.syscat64.XDeckPinos"
-EXPECTED_SHORT_VERSION="1.0.0"
-EXPECTED_BUILD_VERSION="1"
+EXPECTED_SHORT_VERSION="1.0.1"
+EXPECTED_BUILD_VERSION="2"
 EXPECTED_MIN_MACOS="12.0"
 # The app must be exactly these architectures, in any order.
 EXPECTED_ARCHS="arm64 x86_64"

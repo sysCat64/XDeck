@@ -29,7 +29,7 @@ permissions:
 env:
   # UPDATE POINT: review before every release. This sentence goes into the draft release
   # notes verbatim; it must describe what was actually validated for that version.
-  VALIDATION_NOTE: Validated at runtime on macOS 12.7.6 (Intel). Apple Silicon Monterey has not been runtime-tested.
+  VALIDATION_NOTE: Runtime validation pending on macOS 12.7.6 (Intel). Apple Silicon Monterey has not been runtime-tested.
 
 jobs:
   build:
