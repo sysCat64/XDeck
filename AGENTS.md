@@ -143,7 +143,7 @@ This manual test passed for 1.0.0 to 1.0.1.
 ## Branch and History Discipline
 
 - `main` is the canonical operational branch and the default branch. It carries the full XDeck Pinos history, which was fast-forwarded from the former migration branch; the cutover is complete.
-- `pinos-independence` is no longer the active migration branch. It is kept as a preserved migration branch until the owner explicitly decides whether to remove it. No workflow runs automatically for it.
+- The former `pinos-independence` migration branch was retired after the main cutover was complete. Its tip was verified to be an ancestor of `main` before deletion, so its commits remain in `main` history.
 - `macos12` is the preserved, validated compatibility/history branch.
 - Archive tags mark preserved milestones: `archive/xdeck-baseline` (the former upstream baseline) and `archive/pinos-macos12-validated`.
 - Do not delete, rewrite, force-push or repoint these branches or tags unless explicitly authorized. Never force-push `main`.

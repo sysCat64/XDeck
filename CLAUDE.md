@@ -85,7 +85,7 @@ Manual signing, `CODE_SIGN_IDENTITY = "-"` (ad-hoc), no `DEVELOPMENT_TEAM`, App 
 
 ## Release Warning
 
-`main` is the canonical operational branch (the migration cutover is complete). `pinos-independence` is only a preserved migration branch that nothing runs on, and `macos12` is the preserved validated compatibility branch; do not delete or move either without explicit authorization. CI runs on pushes and pull requests to `main`, and by manual dispatch.
+`main` is canonical (the migration cutover is complete) and the former `pinos-independence` migration branch has been retired. `macos12` is the preserved validated compatibility branch and must not be deleted or moved without explicit authorization. CI runs on pushes and pull requests to `main`, and by manual dispatch.
 
 The release workflow is `.github/workflows/release.yml`. Manual `workflow_dispatch` is the normal dry-run path: it never creates a tag or a GitHub Release, and uploads `XDeck-Pinos-<version>-release-candidate` as an Actions artifact. There is no branch-push dry-run trigger. Pushing a `pinos-vMAJOR.MINOR.PATCH` tag is the only real trigger; the workflow validates the exact tag format in bash and requires it to match the built app's `CFBundleShortVersionString`. Real releases are drafts only, never published automatically. Both paths build Release, run `scripts/verify-app.sh`, package `XDeck Pinos.app` + `LICENSE` into `XDeck-Pinos-<version>.zip`, re-extract and reverify the ZIP, and write a `.sha256` sidecar. Details are in `AGENTS.md`.
 
