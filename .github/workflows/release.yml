@@ -2,16 +2,11 @@ name: Release
 
 # XDeck Pinos release workflow.
 #
-# Three entry paths, deliberately kept apart ("Resolve mode" enforces the separation):
+# Two entry paths, deliberately kept apart ("Resolve mode" enforces the separation):
 #
-#   workflow_dispatch          DRY RUN. Builds, verifies and packages exactly like a real
-#                              release and uploads the result as an Actions artifact.
-#                              It never creates a tag and never creates a GitHub Release.
-#
-#   push to pinos-independence TEMPORARY DRY RUN, same as workflow_dispatch. This branch
-#                              trigger exists only because GitHub cannot dispatch a workflow
-#                              that is not yet on the default branch. Remove it (and the
-#                              matching branch trigger in ci.yml) before the main cutover.
+#   workflow_dispatch         DRY RUN. Builds, verifies and packages exactly like a real
+#                             release and uploads the result as an Actions artifact.
+#                             It never creates a tag and never creates a GitHub Release.
 #
 #   push of tag pinos-v*      REAL RELEASE. The tag filter below is only a glob; the
 #                              "Resolve mode" step enforces the exact format
@@ -25,9 +20,6 @@ name: Release
 on:
   workflow_dispatch:
   push:
-    # TEMPORARY: dry-run trigger until the main cutover; see the header comment.
-    branches:
-      - pinos-independence
     tags:
       - 'pinos-v*'
 
@@ -67,18 +59,6 @@ jobs:
             # The dispatched ref is a branch (or whatever the caller picked); it is never
             # interpreted as a release tag.
             echo "Mode: DRY RUN (workflow_dispatch). No tag and no GitHub Release will be created."
-            {
-              echo "is_release=false"
-              echo "tag="
-            } >> "$GITHUB_OUTPUT"
-          elif [ "$EVENT_NAME" = "push" ] && [ "$REF_TYPE" = "branch" ]; then
-            # TEMPORARY dry-run path. Only the one migration branch is accepted, and it is
-            # never a release: is_release stays false, so no GitHub Release can be created.
-            if [ "$REF_NAME" != "pinos-independence" ]; then
-              echo "::error::push to branch '$REF_NAME' is not a supported dry-run trigger"
-              exit 1
-            fi
-            echo "Mode: DRY RUN (push to branch $REF_NAME). No tag and no GitHub Release will be created."
             {
               echo "is_release=false"
               echo "tag="

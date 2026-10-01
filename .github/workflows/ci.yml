@@ -7,14 +7,12 @@ name: CI
 # result. The Release artifact is the candidate for the pre-release macOS 12 runtime gate.
 #
 # This is not a release workflow: it does not run for tags and publishes nothing.
-# "pinos-independence" is a temporary push trigger until the main cutover.
 
 on:
   workflow_dispatch:
   push:
     branches:
       - main
-      - pinos-independence
   pull_request:
     branches:
       - main

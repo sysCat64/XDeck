@@ -57,7 +57,7 @@ xcodebuild \
 
 Do not add `CODE_SIGNING_ALLOWED=NO`. The project is intentionally configured for ad-hoc signing.
 
-The authoritative CI is `.github/workflows/ci.yml` (workflow name `CI`). It runs on `macos-26` with Xcode 26 selected explicitly, for manual dispatch, pushes to `main` and `pinos-independence` (temporary until the main cutover) and pull requests to `main`. It does not run for tags. It builds **Debug and Release** with the project's own settings (no deployment-target or signing overrides) into a deterministic DerivedData path, and runs `scripts/verify-app.sh` on each `XDeck Pinos.app`, which requires:
+The authoritative CI is `.github/workflows/ci.yml` (workflow name `CI`). It runs on `macos-26` with Xcode 26 selected explicitly, for manual dispatch, pushes to `main` and pull requests to `main`. No other branch triggers it automatically. It does not run for tags. It builds **Debug and Release** with the project's own settings (no deployment-target or signing overrides) into a deterministic DerivedData path, and runs `scripts/verify-app.sh` on each `XDeck Pinos.app`, which requires:
 
 - bundle identifier, version `1.0.0` (build `1`) and an existing executable
 - exactly x86_64 + arm64
@@ -95,8 +95,8 @@ Intended XDeck Pinos release model:
 
 The release workflow is `.github/workflows/release.yml` (workflow name `Release`). The upstream release workflow and its Developer ID export options were removed; they remain only in git history and are not a template for Pinos.
 
-- **Manual `workflow_dispatch` is a dry run.** It never creates a tag and never creates a GitHub Release. It builds, verifies and packages exactly like a real release and uploads the result as the Actions artifact `XDeck-Pinos-<version>-release-candidate`. The version comes from the built app, not from the branch name.
-- **A push of a `pinos-vMAJOR.MINOR.PATCH` tag is the real release trigger.** The workflow trigger `pinos-v*` is only a glob; the workflow itself validates the exact format `^pinos-v[0-9]+\.[0-9]+\.[0-9]+$` in bash before building, and requires the tag's version to equal `CFBundleShortVersionString` of the built app. It fails closed otherwise.
+- **Manual `workflow_dispatch` is the normal dry-run path.** There is no branch-push dry-run trigger. It never creates a tag and never creates a GitHub Release. It builds, verifies and packages exactly like a real release and uploads the result as the Actions artifact `XDeck-Pinos-<version>-release-candidate`. The version comes from the built app, not from the branch name.
+- **A push of a `pinos-vMAJOR.MINOR.PATCH` tag is the only real release trigger.** Anything other than `workflow_dispatch` or a tag push fails closed. The workflow trigger `pinos-v*` is only a glob; the workflow itself validates the exact format `^pinos-v[0-9]+\.[0-9]+\.[0-9]+$` in bash before building, and requires the tag's version to equal `CFBundleShortVersionString` of the built app. It fails closed otherwise.
 - Real releases are created as **drafts only** (`draft: true`, not a pre-release). The workflow never publishes them and never creates or moves tags. Only the draft-release job has `contents: write`.
 - Release builds run `scripts/verify-app.sh` on the built app. The distributable `XDeck-Pinos-<version>.zip` contains `XDeck Pinos.app` and `LICENSE` at its root. It is re-extracted and verified again with `scripts/verify-app.sh` before the `XDeck-Pinos-<version>.zip.sha256` sidecar is created from the final ZIP. The Actions artifact digest is a different value from this checksum.
 - The draft release notes contain a runtime-validation sentence (`VALIDATION_NOTE` in `release.yml`). Review it before every release so it matches what was actually validated.
@@ -106,13 +106,14 @@ Do not publish a release or create release tags unless explicitly authorized by 
 
 ## Branch and History Discipline
 
-- `pinos-independence` is the current migration branch.
-- `main` and `macos12` are preserved historical branches. `main` still points at the upstream baseline until an authorized cutover.
-- Archive tags mark preserved milestones: `archive/xdeck-baseline` and `archive/pinos-macos12-validated`.
-- Do not delete, rewrite, force-push or repoint these branches or tags unless explicitly authorized.
+- `main` is the canonical operational branch and the default branch. It carries the full XDeck Pinos history, which was fast-forwarded from the former migration branch; the cutover is complete.
+- `pinos-independence` is no longer the active migration branch. It is kept as a preserved migration branch until the owner explicitly decides whether to remove it after the first release. No workflow runs automatically for it.
+- `macos12` is the preserved, validated compatibility/history branch.
+- Archive tags mark preserved milestones: `archive/xdeck-baseline` (the former upstream baseline) and `archive/pinos-macos12-validated`.
+- Do not delete, rewrite, force-push or repoint these branches or tags unless explicitly authorized. Never force-push `main`.
 - Keep commits narrow and single-purpose.
 
-For migration work:
+For repository work (changes, compatibility fixes, release preparation):
 
 1. verify the branch, the expected HEAD and a clean tree
 2. inspect the current implementation
