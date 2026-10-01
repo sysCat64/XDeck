@@ -333,6 +333,28 @@ struct ContentView: View {
                                                 }
                                             }
                                             UpdateButton()
+                                            Button {
+                                                openURL(AppConfig.sponsorUrl)
+                                            } label: {
+                                                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                                                    // U+2661 is a text glyph (no emoji presentation); the heart is
+                                                    // 2 pt above the default 13 pt toolbar text size.
+                                                    Text("♡")
+                                                        .font(.system(size: 15, weight: .semibold))
+                                                    Text("Sponsor on GitHub")
+                                                }
+                                                .foregroundColor(Self.textColor(for: backgroundColor))
+                                                .contentShape(Rectangle())
+                                            }
+                                            .buttonStyle(.plain)
+                                            .padding(.leading, 4)
+                                            .onHover { inside in
+                                                if inside {
+                                                    NSCursor.pointingHand.push()
+                                                } else {
+                                                    NSCursor.pop()
+                                                }
+                                            }
                                         }
                                         AppearanceToggle(isOn: $isDarkMode) { }
                                             .disabled(isDarkModeUpdating)

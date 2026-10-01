@@ -17,6 +17,7 @@ struct AppConfig: Decodable {
     static func releaseUrl(forVersion version: String) -> URL {
         repositoryUrl.appendingPathComponent("releases/tag/\(releaseTagPrefix)\(version)")
     }
+    static let sponsorUrl = URL(string: "https://github.com/sponsors/sysCat64")!
 
     var columnWidth: Int?
     var columns: [Column]
