@@ -81,7 +81,7 @@ There is no separate view-model layer. State lives in the SwiftUI views (`@State
 
 ## Signing (short form)
 
-Manual signing, `CODE_SIGN_IDENTITY = "-"` (ad-hoc), no `DEVELOPMENT_TEAM`, App Sandbox off, Hardened Runtime off, no Developer ID, no notarization. Debug artifacts may contain `get-task-allow`; future Release artifacts must not. Do not restore upstream Apple credentials. Full policy is in `AGENTS.md`.
+Manual signing, `CODE_SIGN_IDENTITY = "-"` (ad-hoc), no `DEVELOPMENT_TEAM`, App Sandbox off, Hardened Runtime off, no Developer ID, no notarization. Debug artifacts may contain `get-task-allow`; Release artifacts must not. Do not restore upstream Apple credentials. Full policy is in `AGENTS.md`.
 
 ## Release Warning
 
