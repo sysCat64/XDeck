@@ -14,7 +14,7 @@ XDeck Pinos was originally based on [morishin/XDeck](https://github.com/morishin
 | Xcode target / scheme | `XDeck` / `XDeck` |
 | Deployment target | macOS 12.0 (set in the Xcode project) |
 | Bundle ID | `io.github.syscat64.XDeckPinos` |
-| Marketing version | `1.0.0` |
+| Marketing version / build | `1.0.1` / `2` |
 | Config directory | `~/.config/XDeckPinos` |
 | Release tags | `pinos-vMAJOR.MINOR.PATCH` |
 
@@ -39,7 +39,7 @@ The project is intentionally ad-hoc signed, so do not add `CODE_SIGNING_ALLOWED=
 
 Authoritative CI is `.github/workflows/ci.yml` (`macos-26`, Xcode 26). It builds Debug and Release and runs `scripts/verify-app.sh` on each app: universal x86_64 + arm64, minimum macOS exactly 12.0, a strict ad-hoc signature with no Team ID, Hardened Runtime and App Sandbox off, and no `get-task-allow` in Release (Debug may have it). It uploads `XDeck-Pinos-macOS12-debug` and `XDeck-Pinos-macOS12-release`; the Release artifact is the candidate for the pre-release Monterey runtime gate. Xcode 26 is the build contract (the `XDeck.icon` asset needs it). An older local toolchain may show extra constraints, but it does not override CI.
 
-There are no automated tests. CI success is not runtime validation: real macOS 12.7.6 Intel gates use the exact CI artifact, and one is still required before the first public release. Apple Silicon Monterey is untested, so never claim it as validated.
+There are no automated tests. CI success is not runtime validation: real macOS 12.7.6 Intel gates use the exact CI artifact, and the exact release assets when the gate justifies a release validation claim (see `AGENTS.md`). Apple Silicon Monterey is untested, so never claim it as validated.
 
 ## Architecture
 
@@ -51,10 +51,10 @@ There is no separate view-model layer. State lives in the SwiftUI views (`@State
 
 **Main UI: `XDeck/View/ContentView.swift`**
 - Builds the multi-column layout and the WebView columns from `AppConfig`.
-- Owns the bottom toolbar (GitHub link, version/update, appearance and Hide Ads toggles, shortcut hints) and the hidden keyboard shortcuts.
+- Owns the bottom toolbar (GitHub link, version/update, ♡ Sponsor link, appearance and Hide Ads toggles, shortcut hints) and the hidden keyboard shortcuts.
 - Handles appearance, Hide Ads, zoom, refresh and window-fit.
 - Decodes messages from the web views and updates state.
-- Toolbar traps on Monterey: keep `.contentShape(Rectangle())` on the GitHub icon. The toolbar `HStack` sits at the practical 10-direct-child `ViewBuilder` limit of older SwiftUI toolchains; group or restructure instead of adding an 11th child.
+- Toolbar traps on Monterey: keep `.contentShape(Rectangle())` on the GitHub icon. The toolbar `HStack` sits at the practical 10-direct-child `ViewBuilder` limit of older SwiftUI toolchains; group or restructure instead of adding an 11th child (the Sponsor link lives in the inner GitHub/version group).
 
 **WebView: `XDeck/View/WebView.swift`**
 - `NSViewRepresentable` around `WKWebView`. Its coordinator is the navigation delegate, UI delegate and script-message handler.
@@ -73,7 +73,7 @@ There is no separate view-model layer. State lives in the SwiftUI views (`@State
 - Loads https://x.com/login in a `WebView` with `findUserName`, `findThemeColor` and `loginDialogCompatibility`. Once the username arrives, `ContentView` switches to the columns.
 
 **Configuration: `XDeck/Config/AppConfig.swift`**
-- Config paths under `~/.config/XDeckPinos`, creation and loading of `settings.json`, rewriting `schema.json` on every launch, and the centralized repository/release URLs: `AppConfig.repositoryUrl`, `AppConfig.latestReleaseUrl`, `AppConfig.releaseUrl(forVersion:)`. Do not hard-code the repository URL in views.
+- Config paths under `~/.config/XDeckPinos`, creation and loading of `settings.json`, rewriting `schema.json` on every launch, and the centralized repository/release URLs: `AppConfig.repositoryUrl`, `AppConfig.latestReleaseUrl`, `AppConfig.releaseUrl(forVersion:)`, `AppConfig.sponsorUrl`. Do not hard-code the repository or sponsor URL in views.
 - Upstream XDeck configuration is never migrated automatically.
 
 **Updates: `XDeck/View/UpdateButton.swift`**
@@ -89,7 +89,7 @@ Manual signing, `CODE_SIGN_IDENTITY = "-"` (ad-hoc), no `DEVELOPMENT_TEAM`, App 
 
 The release workflow is `.github/workflows/release.yml`. Manual `workflow_dispatch` is the normal dry-run path: it never creates a tag or a GitHub Release, and uploads `XDeck-Pinos-<version>-release-candidate` as an Actions artifact. There is no branch-push dry-run trigger. Pushing a `pinos-vMAJOR.MINOR.PATCH` tag is the only real trigger; the workflow validates the exact tag format in bash and requires it to match the built app's `CFBundleShortVersionString`. Real releases are drafts only, never published automatically. Both paths build Release, run `scripts/verify-app.sh`, package `XDeck Pinos.app` + `LICENSE` into `XDeck-Pinos-<version>.zip`, re-extract and reverify the ZIP, and write a `.sha256` sidecar. Details are in `AGENTS.md`.
 
-Do not create or publish a release, or create or push release tags, unless the owner explicitly authorizes it, and never use `git push --tags`.
+Do not create or publish a release, or create or push release tags, unless the owner explicitly authorizes it, and never use `git push --tags`. Detailed release publication and update-E2E safeguards are documented in `AGENTS.md`.
 
 ## App Icon
 

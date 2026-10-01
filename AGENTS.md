@@ -25,11 +25,13 @@ Monterey (macOS 12) compatibility is a core goal of the project. Do not describe
 | Xcode target | `XDeck` |
 | Scheme | `XDeck` |
 | Bundle identifier | `io.github.syscat64.XDeckPinos` |
-| Marketing version | `1.0.0` |
+| Marketing version | `1.0.1` |
+| Build version | `2` |
 | Configuration directory | `~/.config/XDeckPinos` |
 | Repository URL | `https://github.com/sysCat64/XDeck-Pinos` |
 | Release tag prefix | `pinos-v` |
-| First planned public release | `pinos-v1.0.0` |
+| Current public release | `pinos-v1.0.1` |
+| First public release | `pinos-v1.0.0` |
 
 Do not rename the target, scheme, source directory or Swift types just to match the product name.
 
@@ -59,11 +61,13 @@ Do not add `CODE_SIGNING_ALLOWED=NO`. The project is intentionally configured fo
 
 The authoritative CI is `.github/workflows/ci.yml` (workflow name `CI`). It runs on `macos-26` with Xcode 26 selected explicitly, for manual dispatch, pushes to `main` and pull requests to `main`. No other branch triggers it automatically. It does not run for tags. It builds **Debug and Release** with the project's own settings (no deployment-target or signing overrides) into a deterministic DerivedData path, and runs `scripts/verify-app.sh` on each `XDeck Pinos.app`, which requires:
 
-- bundle identifier, version `1.0.0` (build `1`) and an existing executable
+- bundle identifier, the exact expected short version and build number pinned in the script (currently `1.0.1`, build `2`) and an existing executable
 - exactly x86_64 + arm64
 - a minimum macOS of exactly 12.0, in `Info.plist` and in both architectures' load commands (not merely 12.0 or lower)
 - a valid strict ad-hoc signature with no Team ID and no signing authority chain, and no Hardened Runtime flag
 - App Sandbox not enabled; in Release, no `get-task-allow` (Debug may have it)
+
+The verifier pins the expected version and build for the current release (`EXPECTED_SHORT_VERSION` and `EXPECTED_BUILD_VERSION` in `scripts/verify-app.sh`). The project's `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` and these verifier expectations must always be changed together; a mismatch fails CI.
 
 It uploads `XDeck-Pinos-macOS12-debug` and `XDeck-Pinos-macOS12-release`. The Release artifact is the candidate for the pre-release Monterey runtime gate. `scripts/verify-app.sh` is shared with the release workflow (`.github/workflows/release.yml`).
 
@@ -85,9 +89,9 @@ Do not add or assume Apple Developer credentials. Do not restore upstream signin
 
 ## Release Status
 
-Intended XDeck Pinos release model:
+XDeck Pinos release model:
 
-- GitHub Releases, tagged `pinos-vMAJOR.MINOR.PATCH`; first release `pinos-v1.0.0`
+- GitHub Releases, tagged `pinos-vMAJOR.MINOR.PATCH`. The first public release was `pinos-v1.0.0`; the current public (latest) release is `pinos-v1.0.1`.
 - universal x86_64 + arm64, ad-hoc signed, not notarized
 - created as a draft first
 - SHA-256 checksum published with the zip
@@ -99,15 +103,47 @@ The release workflow is `.github/workflows/release.yml` (workflow name `Release`
 - **A push of a `pinos-vMAJOR.MINOR.PATCH` tag is the only real release trigger.** Anything other than `workflow_dispatch` or a tag push fails closed. The workflow trigger `pinos-v*` is only a glob; the workflow itself validates the exact format `^pinos-v[0-9]+\.[0-9]+\.[0-9]+$` in bash before building, and requires the tag's version to equal `CFBundleShortVersionString` of the built app. It fails closed otherwise.
 - Real releases are created as **drafts only** (`draft: true`, not a pre-release). The workflow never publishes them and never creates or moves tags. Only the draft-release job has `contents: write`.
 - Release builds run `scripts/verify-app.sh` on the built app. The distributable `XDeck-Pinos-<version>.zip` contains `XDeck Pinos.app` and `LICENSE` at its root. It is re-extracted and verified again with `scripts/verify-app.sh` before the `XDeck-Pinos-<version>.zip.sha256` sidecar is created from the final ZIP. The Actions artifact digest is a different value from this checksum.
-- The draft release notes contain a runtime-validation sentence (`VALIDATION_NOTE` in `release.yml`). Review it before every release so it matches what was actually validated.
-- `scripts/verify-app.sh` pins the expected version (`EXPECTED_SHORT_VERSION`), so a version bump must update it together with the project version.
+- The draft release notes contain a runtime-validation sentence (`VALIDATION_NOTE` in `release.yml`); see "Runtime gate and validation note" below.
+- A version bump changes the project version/build and the verifier expectations together (see Build and CI).
 
 Do not publish a release or create release tags unless explicitly authorized by the owner, and never run the tag-triggered path for testing: use `workflow_dispatch`. Never use `git push --tags`: local clones may hold upstream's numeric tags, which must not be pushed. Push only explicitly named tags, and only when authorized.
+
+### Runtime gate and validation note
+
+`release.yml` deliberately keeps a conservative `VALIDATION_NOTE` default: "Runtime validation pending on macOS 12.7.6 (Intel). Apple Silicon Monterey has not been runtime-tested." Keep that pending default in the file. The sequence for a release is:
+
+1. The tag-triggered workflow creates the draft release.
+2. Download the exact ZIP attached to that draft release and verify it against its `.sha256` sidecar.
+3. Runtime-test that exact ZIP on real Intel macOS 12.7.6.
+4. If it passes, update the existing draft release body from "Runtime validation pending ..." to "Validated at runtime on macOS 12.7.6 (Intel). Apple Silicon Monterey has not been runtime-tested."
+5. Make that API PATCH with `tag_name` specified explicitly and verify the draft invariants immediately afterwards (see the next subsection).
+6. Only then publish the existing draft.
+
+Do not rebuild between the successful runtime gate and publication, and do not replace release assets after it: the ZIP that was tested must be the ZIP that is published. Never claim Apple Silicon Monterey validation.
+
+### Editing an existing draft release through the API (observed hazard)
+
+During the 1.0.1 release, a body-only API PATCH of the existing draft release was observed to change its `tag_name` from `pinos-v1.0.1` to an `untagged-...` value. It was detected before publication and repaired by setting `tag_name` back to `pinos-v1.0.1`; no stray tag was created. This is recorded as an observed hazard in this repository's release process, not as a claim about GitHub in general. When PATCHing an existing draft release through the API:
+
+- specify the intended `pinos-vMAJOR.MINOR.PATCH` `tag_name` explicitly, including in the PATCH that publishes the release
+- read the release back immediately after the PATCH and verify at least the release ID, `tag_name`, draft state, prerelease state and the assets (names, sizes, digests)
+- do not publish if `tag_name` or any other invariant changed unexpectedly; repair it and verify again first
+
+Publication must never create an unintended `untagged-*` tag. After publishing, also check that the tags on origin are exactly the expected ones.
+
+### Update-detection E2E
+
+The update check is validated by a manual test on real Intel macOS 12.7.6; there is no automated test for it. Keep the previous public app available when publishing the next version. Once the new release is published and is `/releases/latest` (a draft is not), verify:
+
+- old app: it detects the new version, shows `v<old> (v<new> is available)` and an Update button, and Update opens the new version's exact GitHub Release page (`pinos-v<new>`)
+- new app: it shows no update indication for itself and keeps the normal current-version display
+
+This manual test passed for 1.0.0 to 1.0.1.
 
 ## Branch and History Discipline
 
 - `main` is the canonical operational branch and the default branch. It carries the full XDeck Pinos history, which was fast-forwarded from the former migration branch; the cutover is complete.
-- `pinos-independence` is no longer the active migration branch. It is kept as a preserved migration branch until the owner explicitly decides whether to remove it after the first release. No workflow runs automatically for it.
+- `pinos-independence` is no longer the active migration branch. It is kept as a preserved migration branch until the owner explicitly decides whether to remove it. No workflow runs automatically for it.
 - `macos12` is the preserved, validated compatibility/history branch.
 - Archive tags mark preserved milestones: `archive/xdeck-baseline` (the former upstream baseline) and `archive/pinos-macos12-validated`.
 - Do not delete, rewrite, force-push or repoint these branches or tags unless explicitly authorized. Never force-push `main`.
@@ -131,8 +167,9 @@ Operational GitHub URLs are centralized in `XDeck/Config/AppConfig.swift`:
 - `AppConfig.repositoryUrl`
 - `AppConfig.latestReleaseUrl`
 - `AppConfig.releaseUrl(forVersion:)`
+- `AppConfig.sponsorUrl` (the maintainer's GitHub Sponsors page)
 
-Do not add new hard-coded operational repository URLs in views when these can be used.
+Do not add new hard-coded operational repository or sponsorship URLs in views when these can be used.
 
 The release parser in `UpdateButton.swift` deliberately validates the scheme, the host, the exact configured repository path and `pinos-vMAJOR.MINOR.PATCH`, and fails closed for anything else. If the repository is renamed again, update `AppConfig.repositoryUrl` before shipping a release.
 
@@ -154,7 +191,7 @@ The WKWebView on macOS 12 uses an older system WebKit than current Safari builds
 ## UI Compatibility Notes
 
 - The GitHub toolbar icon is a custom `Shape` inside a plain `Button`. Keep its explicit `.contentShape(Rectangle())`; without it the icon was not reliably clickable on Monterey.
-- The bottom toolbar `HStack` currently stays within the older SwiftUI `ViewBuilder` limit of 10 direct children. Older toolchains fail if more are added. When adding a toolbar item, group views or restructure deliberately instead of adding another direct child.
+- The bottom toolbar `HStack` currently stays within the older SwiftUI `ViewBuilder` limit of 10 direct children. Older toolchains fail if more are added. When adding a toolbar item, group views or restructure deliberately instead of adding another direct child. The Sponsor link was added inside the existing inner GitHub/version group for this reason.
 - Do not refactor the toolbar for style alone.
 
 ## Important Files
@@ -163,7 +200,7 @@ The WKWebView on macOS 12 uses an older system WebKit than current Safari builds
 - `XDeck/View/ContentView.swift`: main multi-column UI and bottom toolbar
 - `XDeck/View/WebView.swift`: WKWebView wrapper
 - `XDeck/WebViewConfigurations.swift`: injected JavaScript/CSS and compatibility shims
-- `XDeck/Config/AppConfig.swift`: configuration paths and centralized repository/release URLs
+- `XDeck/Config/AppConfig.swift`: configuration paths and centralized repository, release and sponsor URLs
 - `XDeck/View/UpdateButton.swift`: Pinos update check and strict release URL parsing
 - `XDeck.xcodeproj/project.pbxproj`: deployment target, product identity and signing settings
 - `.github/workflows/ci.yml`: authoritative CI (Debug and Release build, verification, artifacts)
@@ -198,7 +235,7 @@ Relevant validation:
 - configuration loading and keyboard shortcuts
 - toolbar links and the update/version links
 
-For user-visible or runtime-sensitive compatibility changes, CI success alone is not enough. When requested, run a real macOS 12.7.6 Intel gate using the exact CI artifact (the Release artifact when validating release readiness). A real Intel Monterey gate is also required before the first public release. Apple Silicon Monterey remains untested and must not be described as validated.
+For user-visible or runtime-sensitive compatibility changes, CI success alone is not enough. The appropriate real macOS 12.7.6 Intel gate is required for user-visible or runtime-sensitive release changes. When requested, run it using the exact CI artifact (the Release artifact when validating release readiness). Use the exact release assets when the gate is meant to justify a release validation claim (see "Runtime gate and validation note"). Apple Silicon Monterey remains untested and must not be described as validated.
 
 ## Legal / Attribution
 
